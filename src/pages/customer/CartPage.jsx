@@ -203,7 +203,7 @@ export default function CartPage() {
 
           {/* Checkout CTA */}
           <Link
-            to="/login"
+            to="/checkout"
             className="w-full bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm py-3 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all"
           >
             <span>Proceed to Checkout</span>

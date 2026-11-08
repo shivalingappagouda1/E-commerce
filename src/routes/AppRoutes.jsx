@@ -8,16 +8,18 @@ import AdminLayout    from '../components/admin/AdminLayout'
 import AuthGuard from '../components/common/AuthGuard'
 
 // Customer pages
-import HomePage          from '../pages/customer/HomePage'
-import ProductDetailPage from '../pages/customer/ProductDetailPage'
-import CategoryPage      from '../pages/customer/CategoryPage'
-import SearchPage        from '../pages/customer/SearchPage'
-import CartPage          from '../pages/customer/CartPage'
-import WishlistPage      from '../pages/customer/WishlistPage'
-import LoginPage         from '../pages/customer/LoginPage'
-import RegisterPage      from '../pages/customer/RegisterPage'
-import NotFoundPage      from '../pages/customer/NotFoundPage'
-import PlaceholderPage   from '../pages/customer/PlaceholderPage'
+import HomePage              from '../pages/customer/HomePage'
+import ProductDetailPage     from '../pages/customer/ProductDetailPage'
+import CategoryPage          from '../pages/customer/CategoryPage'
+import SearchPage            from '../pages/customer/SearchPage'
+import CartPage              from '../pages/customer/CartPage'
+import WishlistPage          from '../pages/customer/WishlistPage'
+import LoginPage             from '../pages/customer/LoginPage'
+import RegisterPage          from '../pages/customer/RegisterPage'
+import CheckoutPage          from '../pages/customer/CheckoutPage'
+import OrderConfirmationPage from '../pages/customer/OrderConfirmationPage'
+import OrdersPage            from '../pages/customer/OrdersPage'
+import NotFoundPage          from '../pages/customer/NotFoundPage'
 
 // Admin pages
 import AdminDashboard   from '../pages/admin/AdminDashboard'
@@ -36,19 +38,21 @@ export default function AppRoutes() {
       {/* ── Customer routes ── */}
       <Route element={<CustomerLayout />}>
         <Route index element={<HomePage />} />
-        <Route path="category/:slug"  element={<CategoryPage />} />
-        <Route path="product/:slug"   element={<ProductDetailPage />} />
-        <Route path="search"          element={<SearchPage />} />
-        <Route path="cart"            element={<CartPage />} />
-        <Route path="wishlist"        element={<WishlistPage />} />
-        <Route path="login"           element={<LoginPage />} />
-        <Route path="register"        element={<RegisterPage />} />
-        <Route path="orders"          element={<PlaceholderPage title="My Orders" />} />
-        <Route path="featured"        element={<CategoryPage />} />
-        <Route path="best-sellers"    element={<CategoryPage />} />
-        <Route path="trending"        element={<CategoryPage />} />
-        <Route path="deals"           element={<CategoryPage />} />
-        <Route path="*"               element={<NotFoundPage />} />
+        <Route path="category/:slug"           element={<CategoryPage />} />
+        <Route path="product/:slug"            element={<ProductDetailPage />} />
+        <Route path="search"                   element={<SearchPage />} />
+        <Route path="cart"                     element={<CartPage />} />
+        <Route path="wishlist"                 element={<WishlistPage />} />
+        <Route path="checkout"                 element={<CheckoutPage />} />
+        <Route path="order-success/:orderId"   element={<OrderConfirmationPage />} />
+        <Route path="orders"                   element={<OrdersPage />} />
+        <Route path="login"                    element={<LoginPage />} />
+        <Route path="register"                 element={<RegisterPage />} />
+        <Route path="featured"                 element={<CategoryPage />} />
+        <Route path="best-sellers"             element={<CategoryPage />} />
+        <Route path="trending"                 element={<CategoryPage />} />
+        <Route path="deals"                    element={<CategoryPage />} />
+        <Route path="*"                        element={<NotFoundPage />} />
       </Route>
 
       {/* ── Admin routes (Protected by AuthGuard) ── */}

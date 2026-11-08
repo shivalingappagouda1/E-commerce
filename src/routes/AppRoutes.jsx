@@ -22,8 +22,15 @@ import OrdersPage            from '../pages/customer/OrdersPage'
 import NotFoundPage          from '../pages/customer/NotFoundPage'
 
 // Admin pages
-import AdminDashboard   from '../pages/admin/AdminDashboard'
-import AdminPlaceholder from '../pages/admin/AdminPlaceholder'
+import AdminDashboard        from '../pages/admin/AdminDashboard'
+import AdminProductsPage     from '../pages/admin/AdminProductsPage'
+import AdminCategoriesPage   from '../pages/admin/AdminCategoriesPage'
+import AdminOrdersPage       from '../pages/admin/AdminOrdersPage'
+import AdminInventoryPage    from '../pages/admin/AdminInventoryPage'
+import AdminBannersPage      from '../pages/admin/AdminBannersPage'
+import AdminCouponsPage      from '../pages/admin/AdminCouponsPage'
+import AdminReviewsPage      from '../pages/admin/AdminReviewsPage'
+import AdminPlaceholder      from '../pages/admin/AdminPlaceholder'
 
 /**
  * AppRoutes — central route configuration.
@@ -65,14 +72,14 @@ export default function AppRoutes() {
         }
       >
         <Route index element={<AdminDashboard />} />
-        <Route path="products"   element={<AdminPlaceholder title="Product Management"   description="Add, edit, and manage your product catalog." />} />
-        <Route path="categories" element={<AdminPlaceholder title="Category Management"  description="Organize products into browsable categories." />} />
-        <Route path="inventory"  element={<AdminPlaceholder title="Inventory Management" description="Track and update stock quantities per product." />} />
-        <Route path="orders"     element={<AdminPlaceholder title="Order Management"     description="View, process, and update customer orders." />} />
+        <Route path="products"   element={<AdminProductsPage />} />
+        <Route path="categories" element={<AdminCategoriesPage />} />
+        <Route path="inventory"  element={<AdminInventoryPage />} />
+        <Route path="orders"     element={<AdminOrdersPage />} />
+        <Route path="banners"    element={<AdminBannersPage />} />
+        <Route path="coupons"    element={<AdminCouponsPage />} />
+        <Route path="reviews"    element={<AdminReviewsPage />} />
         <Route path="customers"  element={<AdminPlaceholder title="Customer Management"  description="View customer profiles and purchase history." />} />
-        <Route path="banners"    element={<AdminPlaceholder title="Banner Management"    description="Upload and schedule promotional banners." />} />
-        <Route path="coupons"    element={<AdminPlaceholder title="Coupon Management"    description="Create discount codes and promotional offers." />} />
-        <Route path="reviews"    element={<AdminPlaceholder title="Reviews Management"   description="Moderate and respond to customer reviews." />} />
         <Route path="analytics"  element={<AdminPlaceholder title="Analytics"            description="Sales trends, revenue charts and insights." />} />
         <Route path="settings"   element={<AdminPlaceholder title="Store Settings"       description="Configure store name, payment and shipping settings." />} />
       </Route>

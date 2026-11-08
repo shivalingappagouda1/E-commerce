@@ -19,6 +19,7 @@ import RegisterPage          from '../pages/customer/RegisterPage'
 import CheckoutPage          from '../pages/customer/CheckoutPage'
 import OrderConfirmationPage from '../pages/customer/OrderConfirmationPage'
 import OrdersPage            from '../pages/customer/OrdersPage'
+import ProfilePage           from '../pages/customer/ProfilePage'
 import NotFoundPage          from '../pages/customer/NotFoundPage'
 
 // Admin pages
@@ -55,6 +56,7 @@ export default function AppRoutes() {
         <Route path="checkout"                 element={<CheckoutPage />} />
         <Route path="order-success/:orderId"   element={<OrderConfirmationPage />} />
         <Route path="orders"                   element={<OrdersPage />} />
+        <Route path="profile"                  element={<ProfilePage />} />
         <Route path="login"                    element={<LoginPage />} />
         <Route path="register"                 element={<RegisterPage />} />
         <Route path="featured"                 element={<CategoryPage />} />

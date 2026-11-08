@@ -78,34 +78,156 @@ export async function fetchAddresses() {
 }
 
 export async function createAddress(addressData) {
-  if (!supabase) {
-    const newAddr = {
-      id: `addr-${Date.now()}`,
-      ...addressData,
-      is_default: addressData.is_default || false,
+  if (supabase) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data, error } = await supabase
+          .from('addresses')
+          .insert([{ ...addressData, user_id: user.id }])
+          .select()
+          .single()
+
+        if (!error && data) {
+          return { data, error: null }
+        }
+      }
+    } catch {
+      // Fall through to local address
     }
-    saveLocalAddress(newAddr)
-    return { data: newAddr, error: null }
   }
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return { data: null, error: { message: 'Must be signed in to save addresses' } }
+  const newAddr = {
+    id: `addr-${Date.now()}`,
+    ...addressData,
+    is_default: addressData.is_default || false,
+  }
+  saveLocalAddress(newAddr)
+  return { data: newAddr, error: null }
+}
+
+export async function updateAddress(id, addressData) {
+  if (supabase) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data, error } = await supabase
+          .from('addresses')
+          .update(addressData)
+          .eq('id', id)
+          .select()
+          .single()
+
+        if (!error && data) {
+          return { data, error: null }
+        }
+      }
+    } catch {
+      // Fall through
+    }
   }
 
-  const { data, error } = await supabase
-    .from('addresses')
-    .insert([{ ...addressData, user_id: user.id }])
-    .select()
-    .single()
+  const addresses = getLocalAddresses()
+  const updated = addresses.map(a => a.id === id ? { ...a, ...addressData } : a)
+  localStorage.setItem(ADDRESSES_STORAGE_KEY, JSON.stringify(updated))
+  const updatedItem = updated.find(a => a.id === id)
+  return { data: updatedItem, error: null }
+}
 
-  return { data, error }
+export async function deleteAddress(id) {
+  if (supabase) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { error } = await supabase
+          .from('addresses')
+          .delete()
+          .eq('id', id)
+
+        if (!error) {
+          return { success: true, error: null }
+        }
+      }
+    } catch {
+      // Fall through
+    }
+  }
+
+  const addresses = getLocalAddresses()
+  const filtered = addresses.filter(a => a.id !== id)
+  localStorage.setItem(ADDRESSES_STORAGE_KEY, JSON.stringify(filtered))
+  return { success: true, error: null }
+}
+
+export async function setDefaultAddress(id) {
+  if (supabase) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        await supabase.from('addresses').update({ is_default: false }).eq('user_id', user.id)
+        const { error } = await supabase.from('addresses').update({ is_default: true }).eq('id', id)
+        if (!error) {
+          return { success: true, error: null }
+        }
+      }
+    } catch {
+      // Fall through
+    }
+  }
+
+  const addresses = getLocalAddresses()
+  const updated = addresses.map(a => ({
+    ...a,
+    is_default: a.id === id,
+  }))
+  localStorage.setItem(ADDRESSES_STORAGE_KEY, JSON.stringify(updated))
+  return { data: updated, success: true, error: null }
+}
+
+export async function updateCustomerProfile({ full_name, phone, avatar_url }) {
+  if (supabase) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .update({ full_name, phone, avatar_url })
+          .eq('id', user.id)
+          .select()
+          .single()
+
+        if (!error && data) {
+          return { data, error: null }
+        }
+      }
+    } catch {
+      // Fall through
+    }
+  }
+
+  try {
+    const demoUser = JSON.parse(localStorage.getItem('shopkart_demo_user') || '{}')
+    const updated = { ...demoUser, full_name, phone, avatar_url }
+    localStorage.setItem('shopkart_demo_user', JSON.stringify(updated))
+    return { data: updated, error: null }
+  } catch {
+    return { data: { full_name, phone, avatar_url }, error: null }
+  }
 }
 
 /* ============================================================
    ORDERS & CHECKOUT
    ============================================================ */
-export async function placeOrder({ addressId, notes = '', cartItems = [], totalAmount = 0, address = null }) {
+export async function placeOrder({
+  addressId,
+  notes = '',
+  cartItems = [],
+  totalAmount = 0,
+  address = null,
+  subtotal = null,
+  discountAmount = 0,
+  shippingAmount = 0,
+}) {
   if (supabase) {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
@@ -125,17 +247,26 @@ export async function placeOrder({ addressId, notes = '', cartItems = [], totalA
   }
 
   // Fallback / Sample Mode simulation
+  const defaultAddr = getLocalAddresses()[0]
+  const finalAddr = address || defaultAddr
   const mockOrderId = `ORD-${Date.now().toString().slice(-6)}`
+  const calculatedSubtotal = subtotal !== null ? subtotal : totalAmount
   const mockOrder = {
     id: mockOrderId,
     created_at: new Date().toISOString(),
     status: 'processing',
-    subtotal: totalAmount,
-    discount_amount: 0,
-    shipping_amount: 0,
+    subtotal: calculatedSubtotal,
+    discount_amount: discountAmount,
+    shipping_amount: shippingAmount,
     total_amount: totalAmount,
     notes,
-    address: address || getLocalAddresses()[0],
+    address: finalAddr,
+    customer_name: finalAddr?.full_name || 'Customer',
+    customer_phone: finalAddr?.phone || '+91 98765 43210',
+    customer_email: 'customer@example.com',
+    address_summary: finalAddr
+      ? `${finalAddr.line1 || ''}${finalAddr.line2 ? ', ' + finalAddr.line2 : ''}, ${finalAddr.city || ''}, ${finalAddr.state || ''} - ${finalAddr.pincode || ''}`
+      : 'Bengaluru, Karnataka - 560038',
     items: cartItems.map(item => ({
       id: `item-${Date.now()}-${item.id}`,
       product_id: item.id,

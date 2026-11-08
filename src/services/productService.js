@@ -117,45 +117,51 @@ export async function fetchBanners() {
    PRODUCTS
    ============================================================ */
 export async function fetchProducts(filters = {}) {
-  if (isMock()) {
-    const products = getLocalDemoProducts()
-    // Customer storefront only displays active and in-stock products
-    let result = products.filter(isProductAvailableForCustomer)
+  if (supabase) {
+    try {
+      let query = supabase
+        .from('products')
+        .select(`
+          id, name, slug, price, original_price, discount_percent,
+          rating, review_count, badge, is_featured,
+          categories ( name ),
+          product_images ( image_url, is_primary ),
+          inventory ( quantity )
+        `)
+        .eq('is_active', true)
 
-    if (filters.category) {
-      const catVal = String(filters.category).toLowerCase()
-      result = result.filter(p =>
-        String(p.category_id).toLowerCase() === catVal ||
-        (p.category && p.category.toLowerCase() === catVal) ||
-        (p.categories?.name && p.categories.name.toLowerCase() === catVal)
-      )
+      if (filters.category) query = query.eq('category_id', filters.category)
+      if (filters.featured)  query = query.eq('is_featured', true)
+      if (filters.limit)     query = query.limit(filters.limit)
+
+      const { data, error } = await query
+      if (!error && data && data.length > 0) {
+        return { data, error: null }
+      }
+    } catch {
+      // Fall through to local demo data
     }
-    if (filters.featured) {
-      result = result.filter(p => Boolean(p.is_featured || p.featured))
-    }
-    if (filters.limit) {
-      result = result.slice(0, filters.limit)
-    }
-    return { data: result, error: null }
   }
 
-  let query = supabase
-    .from('products')
-    .select(`
-      id, name, slug, price, original_price, discount_percent,
-      rating, review_count, badge, is_featured,
-      categories ( name ),
-      product_images ( image_url, is_primary ),
-      inventory ( quantity )
-    `)
-    .eq('is_active', true)
+  const products = getLocalDemoProducts()
+  // Customer storefront only displays active and in-stock products
+  let result = products.filter(isProductAvailableForCustomer)
 
-  if (filters.category) query = query.eq('category_id', filters.category)
-  if (filters.featured)  query = query.eq('is_featured', true)
-  if (filters.limit)     query = query.limit(filters.limit)
-
-  const { data, error } = await query
-  return { data, error }
+  if (filters.category) {
+    const catVal = String(filters.category).toLowerCase()
+    result = result.filter(p =>
+      String(p.category_id).toLowerCase() === catVal ||
+      (p.category && p.category.toLowerCase() === catVal) ||
+      (p.categories?.name && p.categories.name.toLowerCase() === catVal)
+    )
+  }
+  if (filters.featured) {
+    result = result.filter(p => Boolean(p.is_featured || p.featured))
+  }
+  if (filters.limit) {
+    result = result.slice(0, filters.limit)
+  }
+  return { data: result, error: null }
 }
 
 export async function fetchFeaturedProducts() {
@@ -163,84 +169,182 @@ export async function fetchFeaturedProducts() {
 }
 
 export async function fetchBestSellers() {
-  if (isMock()) {
-    const { data } = await fetchProducts()
-    const sorted = (data || [])
-      .filter(p => (p.rating || 0) >= 4.5)
-      .sort((a, b) => (b.review_count || b.reviewCount || 0) - (a.review_count || a.reviewCount || 0))
-      .slice(0, 8)
-    return { data: sorted, error: null }
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*, product_images(image_url, is_primary)')
+        .eq('is_active', true)
+        .gte('rating', 4.5)
+        .order('review_count', { ascending: false })
+        .limit(8)
+
+      if (!error && data && data.length > 0) {
+        return { data, error: null }
+      }
+    } catch {
+      // Fall through
+    }
   }
 
-  const { data, error } = await supabase
-    .from('products')
-    .select('*, product_images(image_url, is_primary)')
-    .eq('is_active', true)
-    .gte('rating', 4.5)
-    .order('review_count', { ascending: false })
-    .limit(8)
-
-  return { data, error }
+  const { data } = await fetchProducts()
+  const sorted = (data || [])
+    .filter(p => (p.rating || 0) >= 4.5)
+    .sort((a, b) => (b.review_count || b.reviewCount || 0) - (a.review_count || a.reviewCount || 0))
+    .slice(0, 8)
+  return { data: sorted, error: null }
 }
 
 export async function fetchTrendingProducts() {
-  if (isMock()) {
-    const { data } = await fetchProducts()
-    const sorted = (data || [])
-      .filter(p => ['Trending', 'Hot', 'Top Deal'].includes(p.badge))
-      .slice(0, 8)
-    return { data: sorted, error: null }
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*, product_images(image_url, is_primary)')
+        .eq('is_active', true)
+        .in('badge', ['Trending', 'Hot', 'Top Deal'])
+        .limit(8)
+
+      if (!error && data && data.length > 0) {
+        return { data, error: null }
+      }
+    } catch {
+      // Fall through
+    }
   }
 
-  const { data, error } = await supabase
-    .from('products')
-    .select('*, product_images(image_url, is_primary)')
-    .eq('is_active', true)
-    .in('badge', ['Trending', 'Hot', 'Top Deal'])
-    .limit(8)
-
-  return { data, error }
+  const { data } = await fetchProducts()
+  const sorted = (data || [])
+    .filter(p => ['Trending', 'Hot', 'Top Deal'].includes(p.badge))
+    .slice(0, 8)
+  return { data: sorted, error: null }
 }
 
 export async function fetchDeals() {
-  if (isMock()) {
-    const { data } = await fetchProducts()
-    const sorted = (data || [])
-      .filter(p => (p.discount_percent || p.discount || 0) >= 30)
-      .sort((a, b) => (b.discount_percent || b.discount || 0) - (a.discount_percent || a.discount || 0))
-      .slice(0, 6)
-    return { data: sorted, error: null }
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*, product_images(image_url, is_primary)')
+        .eq('is_active', true)
+        .gte('discount_percent', 30)
+        .order('discount_percent', { ascending: false })
+        .limit(6)
+
+      if (!error && data && data.length > 0) {
+        return { data, error: null }
+      }
+    } catch {
+      // Fall through
+    }
   }
 
-  const { data, error } = await supabase
-    .from('products')
-    .select('*, product_images(image_url, is_primary)')
-    .eq('is_active', true)
-    .gte('discount_percent', 30)
-    .order('discount_percent', { ascending: false })
-    .limit(6)
-
-  return { data, error }
+  const { data } = await fetchProducts()
+  const sorted = (data || [])
+    .filter(p => (p.discount_percent || p.discount || 0) >= 30)
+    .sort((a, b) => (b.discount_percent || b.discount || 0) - (a.discount_percent || a.discount || 0))
+    .slice(0, 6)
+  return { data: sorted, error: null }
 }
 
 export async function fetchProductBySlug(slug) {
-  if (isMock()) {
-    const products = getLocalDemoProducts()
-    const product = products.find(p => p.slug === slug) || null
-    return { data: product, error: null }
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select(`
+          *, categories(name, slug),
+          product_images(*),
+          product_variants(*),
+          inventory(*),
+          reviews(*, profiles(full_name, avatar_url))
+        `)
+        .eq('slug', slug)
+        .single()
+
+      if (!error && data) {
+        return { data, error: null }
+      }
+    } catch {
+      // Fall through
+    }
   }
 
-  const { data, error } = await supabase
-    .from('products')
-    .select(`
-      *, categories(name, slug),
-      product_images(*),
-      product_variants(*),
-      inventory(*),
-      reviews(*, profiles(full_name, avatar_url))
-    `)
-    .eq('slug', slug)
-    .single()
+  const products = getLocalDemoProducts()
+  const product = products.find(p => p.slug === slug) || null
+  return { data: product, error: null }
+}
 
-  return { data, error }
+/* ============================================================
+   REVIEWS
+   ============================================================ */
+export const REVIEWS_STORAGE = 'shopkart_admin_reviews'
+
+export async function fetchProductReviews(productName) {
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('reviews')
+        .select('*, profiles(full_name, avatar_url)')
+        .eq('is_approved', true)
+        .order('created_at', { ascending: false })
+
+      if (!error && data && data.length > 0) {
+        return { data, error: null }
+      }
+    } catch {
+      // Fall through to local reviews
+    }
+  }
+
+  try {
+    const stored = localStorage.getItem(REVIEWS_STORAGE)
+    const reviews = stored ? JSON.parse(stored) : []
+    const matching = reviews.filter(r =>
+      (!productName || (r.product_name && r.product_name.toLowerCase().includes(productName.toLowerCase()))) &&
+      r.is_approved !== false
+    )
+    return { data: matching, error: null }
+  } catch {
+    return { data: [], error: null }
+  }
+}
+
+export async function submitProductReview({ productName, userName, rating, title, body, productId }) {
+  const newReview = {
+    id: `rev-${Date.now()}`,
+    product_id: productId,
+    product_name: productName,
+    user_name: userName || 'Customer',
+    rating: Number(rating) || 5,
+    title,
+    body,
+    is_approved: true,
+    created_at: new Date().toISOString(),
+  }
+
+  try {
+    const raw = localStorage.getItem(REVIEWS_STORAGE)
+    const list = raw ? JSON.parse(raw) : []
+    list.unshift(newReview)
+    localStorage.setItem(REVIEWS_STORAGE, JSON.stringify(list))
+  } catch (err) {
+    console.error('Error saving review to local storage:', err)
+  }
+
+  if (!isMock()) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user && productId) {
+      await supabase.from('reviews').insert([{
+        product_id: productId,
+        user_id: user.id,
+        rating: Number(rating) || 5,
+        title,
+        body,
+        is_approved: false,
+      }])
+    }
+  }
+
+  return { data: newReview, error: null }
 }

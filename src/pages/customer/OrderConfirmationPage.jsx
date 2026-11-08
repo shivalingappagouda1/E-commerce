@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { CheckCircle2, Package, ArrowRight, Home, Calendar, MapPin } from 'lucide-react'
+import { CheckCircle2, Package, Home, Calendar, MapPin } from 'lucide-react'
 import { fetchOrderById } from '../../services/orderService'
 import { formatPrice } from '../../utils/format'
 
@@ -15,6 +15,15 @@ export default function OrderConfirmationPage() {
       setLoading(false)
     })
   }, [orderId])
+
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-20 text-center">
+        <div className="w-12 h-12 border-4 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-sm text-slate-500">Retrieving your order details...</p>
+      </div>
+    )
+  }
 
   const deliveryDate = new Date()
   deliveryDate.setDate(deliveryDate.getDate() + 4)

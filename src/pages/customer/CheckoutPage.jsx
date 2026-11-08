@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
-  MapPin,
   Plus,
   ShieldCheck,
   Truck,
@@ -15,7 +14,10 @@ import {
   Lock,
 } from 'lucide-react'
 import { useCart } from '../../context/CartContext'
+import { useAuth } from '../../context/AuthContext'
+import { isSupabaseConfigured } from '../../lib/supabase'
 import { fetchAddresses, createAddress, placeOrder } from '../../services/orderService'
+import { validateCoupon } from '../../services/productService'
 import { formatPrice } from '../../utils/format'
 
 const FREE_SHIPPING_THRESHOLD = 999
@@ -24,6 +26,7 @@ const SHIPPING_FEE = 99
 export default function CheckoutPage() {
   const navigate = useNavigate()
   const { items, totalPrice, totalItems, clearCart } = useCart()
+  const { user } = useAuth()
 
   const [addresses, setAddresses] = useState([])
   const [selectedAddressId, setSelectedAddressId] = useState('')
@@ -78,7 +81,7 @@ export default function CheckoutPage() {
 
   const finalPayable = Math.max(0, totalPrice - couponDiscount + shippingFee)
 
-  function handleApplyCoupon(e) {
+  async function handleApplyCoupon(e) {
     e.preventDefault()
     setCouponError('')
     setCouponSuccess('')
@@ -86,23 +89,17 @@ export default function CheckoutPage() {
     const code = couponCode.trim().toUpperCase()
     if (!code) return
 
-    if (code === 'SHOPKART10') {
-      if (totalPrice < 999) {
-        setCouponError('SHOPKART10 requires a minimum order of ₹999.')
-        return
-      }
-      setAppliedCoupon({ code: 'SHOPKART10', type: 'percent', value: 10 })
-      setCouponSuccess('10% discount applied successfully!')
-    } else if (code === 'WELCOME500') {
-      if (totalPrice < 4999) {
-        setCouponError('WELCOME500 requires a minimum order of ₹4,999.')
-        return
-      }
-      setAppliedCoupon({ code: 'WELCOME500', type: 'fixed', value: 500 })
-      setCouponSuccess('₹500 discount applied successfully!')
-    } else {
-      setCouponError('Invalid coupon code. Try SHOPKART10 or WELCOME500.')
+    const result = await validateCoupon(code, totalPrice)
+    if (!result.valid) {
+      setCouponError(result.error)
+      return
     }
+
+    setAppliedCoupon(result.coupon)
+    const discountText = result.coupon.type === 'percent'
+      ? `${result.coupon.value}% discount applied!`
+      : `₹${result.coupon.value} discount applied!`
+    setCouponSuccess(discountText)
   }
 
   function handleRemoveCoupon() {
@@ -219,6 +216,26 @@ export default function CheckoutPage() {
           <p className="text-xs text-slate-500">Review your order, address, and payment method</p>
         </div>
       </div>
+
+      {/* Supabase unauthenticated warning banner */}
+      {isSupabaseConfigured && !user && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <AlertCircle size={20} className="text-amber-600 flex-shrink-0" />
+            <div>
+              <p className="text-xs font-bold">Sign In Required for Secure Checkout</p>
+              <p className="text-[11px] text-amber-700">Please sign in to your ShopKart account to register your delivery address and save your order.</p>
+            </div>
+          </div>
+          <Link
+            to="/login"
+            state={{ from: '/checkout' }}
+            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 rounded-xl transition-colors shrink-0 shadow-xs"
+          >
+            Sign In to Checkout
+          </Link>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl p-3.5 flex items-center gap-2.5 shadow-sm">
@@ -555,17 +572,27 @@ export default function CheckoutPage() {
             </div>
 
             {/* Place Order CTA */}
-            <button
-              onClick={handlePlaceOrder}
-              disabled={submitting || !selectedAddressId}
-              className="w-full bg-brand-500 hover:bg-brand-600 disabled:bg-slate-300 text-white font-bold text-sm py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-brand-500/25 transition-all"
-            >
-              {submitting ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <span>Confirm & Place Order • {formatPrice(finalPayable)}</span>
-              )}
-            </button>
+            {isSupabaseConfigured && !user ? (
+              <Link
+                to="/login"
+                state={{ from: '/checkout' }}
+                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-md transition-all text-center"
+              >
+                Sign In to Place Order
+              </Link>
+            ) : (
+              <button
+                onClick={handlePlaceOrder}
+                disabled={submitting || !selectedAddressId}
+                className="w-full bg-brand-500 hover:bg-brand-600 disabled:bg-slate-300 text-white font-bold text-sm py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-brand-500/25 transition-all"
+              >
+                {submitting ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <span>Confirm & Place Order • {formatPrice(finalPayable)}</span>
+                )}
+              </button>
+            )}
 
             <div className="flex items-center justify-center gap-1.5 text-slate-400 text-[11px] pt-1">
               <ShieldCheck size={14} className="text-emerald-600" />

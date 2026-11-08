@@ -107,20 +107,23 @@ npm run preview    # preview the production build locally
 | `/search?q=`          | Search results                       |
 | `/cart`               | Shopping cart                        |
 | `/wishlist`           | Saved wishlist                       |
+| `/checkout`           | Secure checkout                      |
+| `/order-success/:id`  | Order confirmation receipt           |
+| `/orders`             | Order history & shipment tracking    |
+| `/profile`            | Customer profile & address manager   |
 | `/login`              | Login page                           |
 | `/register`           | Registration page                    |
-| `/orders`             | Order history                        |
 | `/admin`              | Admin dashboard overview             |
-| `/admin/products`     | Product management                   |
+| `/admin/products`     | Product management & pricing         |
 | `/admin/categories`   | Category management                  |
-| `/admin/inventory`    | Inventory management                 |
-| `/admin/orders`       | Order management                     |
-| `/admin/customers`    | Customer management                  |
-| `/admin/banners`      | Banner management                    |
-| `/admin/coupons`      | Coupon management                    |
-| `/admin/reviews`      | Review moderation                    |
-| `/admin/analytics`    | Sales analytics                      |
-| `/admin/settings`     | Store settings                       |
+| `/admin/inventory`    | Stock & inventory management         |
+| `/admin/orders`       | Order status & fulfillment           |
+| `/admin/customers`    | Customer CRM & metrics               |
+| `/admin/banners`      | Promotional banners management       |
+| `/admin/coupons`      | Discount coupon management           |
+| `/admin/reviews`      | Customer review moderation           |
+| `/admin/analytics`    | Sales, revenue & orders analytics    |
+| `/admin/settings`     | Store & platform settings            |
 
 ---
 
@@ -130,7 +133,7 @@ npm run preview    # preview the production build locally
 - Customers can only read/write their own data.
 - Admin access is enforced via a `role` column on the `profiles` table and an `is_admin()` PostgreSQL function.
 - The `service_role` key is **never** used in frontend code.
-- Hiding admin routes in the UI is **not** relied upon as a security mechanism.
+- Hiding admin routes in the UI is **not** relied upon as a security mechanism; all `/admin/*` routes are secured with `AuthGuard` requiring `role === 'admin'`.
 
 ---
 
@@ -138,12 +141,10 @@ npm run preview    # preview the production build locally
 
 | Phase | Status        | Scope                                                            |
 |-------|---------------|------------------------------------------------------------------|
-| 1     | ✅ Complete   | Foundation, routing, homepage, admin layout, DB schema           |
-| 2     | 🔜 Planned    | Supabase auth, login/register, product detail page               |
-| 3     | 🔜 Planned    | Cart & checkout, real-time inventory                             |
-| 4     | 🔜 Planned    | Full admin CRUD — products, categories, banners, coupons         |
-| 5     | 🔜 Planned    | Payment integration, order management, reviews                   |
-| 6     | 🔜 Planned    | Analytics dashboard, SEO, Vercel deployment                      |
+| 1 & 2 | ✅ Complete   | Foundation, routing, layout, DB schema, auth flow, security      |
+| 3 & 4 | ✅ Complete   | Admin CMS suite — products, categories, inventory, orders, CMS   |
+| 5     | ✅ Complete   | Admin Customer CRM, Revenue Analytics, and Platform Settings     |
+| 6     | ✅ Complete   | Customer storefront redesign, live search, catalog filters, UX   |
 
 ---
 

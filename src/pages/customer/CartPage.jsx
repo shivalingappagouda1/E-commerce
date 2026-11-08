@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Trash2, ShoppingBag, ArrowRight, ShieldCheck, Tag,
-  Heart, Truck, ArrowLeft, CheckCircle2, AlertCircle
+  Heart, Truck, ArrowLeft
 } from 'lucide-react'
 import { useCart } from '../../context/CartContext'
 import { useWishlist } from '../../context/WishlistContext'
 import { formatPrice } from '../../utils/format'
+import { validateCoupon } from '../../services/productService'
 
 const FREE_SHIPPING_THRESHOLD = 999
 const STANDARD_SHIPPING_FEE = 99
@@ -39,7 +40,7 @@ export default function CartPage() {
 
   const finalTotal = Math.max(0, totalPrice - couponDiscount + shippingFee)
 
-  function handleApplyCoupon(e) {
+  async function handleApplyCoupon(e) {
     e.preventDefault()
     setCouponError('')
     setCouponSuccess('')
@@ -47,24 +48,17 @@ export default function CartPage() {
     const code = couponCode.trim().toUpperCase()
     if (!code) return
 
-    // Validate coupons
-    if (code === 'SHOPKART10') {
-      if (totalPrice < 999) {
-        setCouponError('SHOPKART10 requires a minimum order of ₹999.')
-        return
-      }
-      setAppliedCoupon({ code: 'SHOPKART10', type: 'percent', value: 10 })
-      setCouponSuccess('Coupon SHOPKART10 applied! 10% discount added.')
-    } else if (code === 'WELCOME500') {
-      if (totalPrice < 4999) {
-        setCouponError('WELCOME500 requires a minimum order of ₹4,999.')
-        return
-      }
-      setAppliedCoupon({ code: 'WELCOME500', type: 'fixed', value: 500 })
-      setCouponSuccess('Coupon WELCOME500 applied! ₹500 discount added.')
-    } else {
-      setCouponError('Invalid coupon code. Try SHOPKART10 or WELCOME500.')
+    const result = await validateCoupon(code, totalPrice)
+    if (!result.valid) {
+      setCouponError(result.error)
+      return
     }
+
+    setAppliedCoupon(result.coupon)
+    const discountText = result.coupon.type === 'percent'
+      ? `${result.coupon.value}% discount added.`
+      : `₹${result.coupon.value} discount added.`
+    setCouponSuccess(`Coupon ${result.coupon.code} applied! ${discountText}`)
   }
 
   function handleRemoveCoupon() {

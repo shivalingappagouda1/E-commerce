@@ -1,4 +1,7 @@
-import { createContext, useContext, useReducer, useEffect } from 'react'
+import { createContext, useContext, useReducer, useEffect, useRef } from 'react'
+import { useAuth } from './AuthContext'
+import { fetchDatabaseCart, syncCartToSupabase, clearDatabaseCart } from '../services/cartService'
+import { isSupabaseConfigured } from '../lib/supabase'
 
 const CartContext = createContext(null)
 
@@ -60,21 +63,73 @@ function cartReducer(state, action) {
 
 export function CartProvider({ children }) {
   const [items, dispatch] = useReducer(cartReducer, [])
+  const { user } = useAuth()
+  const syncTimeoutRef = useRef(null)
+  const isHydratedRef = useRef(false)
 
-  // Hydrate from localStorage
+  // 1. Initial hydration from localStorage
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) dispatch({ type: 'HYDRATE', payload: JSON.parse(stored) })
+      if (stored) {
+        dispatch({ type: 'HYDRATE', payload: JSON.parse(stored) })
+      }
     } catch {
       // ignore parse errors
     }
+    isHydratedRef.current = true
   }, [])
 
-  // Persist to localStorage
+  // 2. Persist to localStorage whenever items change
   useEffect(() => {
+    if (!isHydratedRef.current) return
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
   }, [items])
+
+  // 3. Authenticated database synchronization
+  useEffect(() => {
+    if (!isSupabaseConfigured || !user?.id) return
+
+    let cancelled = false
+
+    async function handleUserCartSync() {
+      // If user logs in and client cart has items, sync them to Supabase
+      if (items.length > 0) {
+        await syncCartToSupabase(items, user.id)
+      } else {
+        // If client cart is empty, check if database cart has existing items
+        const { data: dbItems } = await fetchDatabaseCart(user.id)
+        if (!cancelled && Array.isArray(dbItems) && dbItems.length > 0) {
+          dispatch({ type: 'HYDRATE', payload: dbItems })
+        }
+      }
+    }
+
+    handleUserCartSync()
+
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
+
+  // 4. Debounced database synchronization on cart modifications
+  useEffect(() => {
+    if (!isSupabaseConfigured || !user?.id || !isHydratedRef.current) return
+
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current)
+    }
+
+    syncTimeoutRef.current = setTimeout(() => {
+      syncCartToSupabase(items, user.id)
+    }, 1500)
+
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current)
+      }
+    }
+  }, [items, user?.id])
 
   const addItem = (product, quantity = 1, variant = null) => {
     dispatch({
@@ -85,7 +140,14 @@ export function CartProvider({ children }) {
 
   const removeItem = (id) => dispatch({ type: 'REMOVE_ITEM', payload: id })
   const updateQty = (id, qty) => dispatch({ type: 'UPDATE_QUANTITY', payload: { id, quantity: qty } })
-  const clearCart = () => dispatch({ type: 'CLEAR_CART' })
+
+  const clearCart = () => {
+    dispatch({ type: 'CLEAR_CART' })
+    localStorage.removeItem(STORAGE_KEY)
+    if (isSupabaseConfigured && user?.id) {
+      clearDatabaseCart(user.id)
+    }
+  }
 
   const totalItems = items.reduce((s, i) => s + (Number(i.quantity) || 1), 0)
   const totalPrice = items.reduce((s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0)

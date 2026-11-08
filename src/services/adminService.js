@@ -552,13 +552,29 @@ export async function adminFetchOrders() {
   return { data: merged, error: null }
 }
 
+export const VALID_ORDER_STATUSES = ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded']
+
+export const VALID_TRANSITIONS = {
+  pending: ['processing', 'cancelled'],
+  processing: ['shipped', 'cancelled'],
+  shipped: ['delivered', 'cancelled'],
+  delivered: ['refunded'],
+  cancelled: [],
+  refunded: [],
+}
+
 export async function adminUpdateOrderStatus(orderId, newStatus) {
+  if (!VALID_ORDER_STATUSES.includes(newStatus)) {
+    return { success: false, error: `Invalid order status: ${newStatus}` }
+  }
+
   if (supabase) {
     const { error } = await supabase
       .from('orders')
       .update({ status: newStatus })
       .eq('id', orderId)
     if (!error) return { success: true }
+    return { success: false, error: error.message }
   }
 
   const orders = getLocal(ORDERS_STORAGE_KEY, [])
@@ -601,21 +617,34 @@ export async function adminUpdateStock(productId, newQuantity) {
 export async function adminFetchCustomers() {
   if (supabase) {
     try {
-      const { data: profiles, error } = await supabase
-        .from('profiles')
-        .select(`
-          id,
-          full_name,
-          phone,
-          avatar_url,
-          role,
-          created_at,
-          orders:orders ( id, status, total_amount, created_at )
-        `)
-        .order('created_at', { ascending: false })
+      // 1. Attempt secure admin RPC get_admin_customers (joins auth.users on server side)
+      const { data: rpcCustomers, error: rpcError } = await supabase.rpc('get_admin_customers')
 
-      if (!error && profiles && profiles.length > 0) {
-        const mapped = profiles.map(p => {
+      let baseList = null
+      if (!rpcError && Array.isArray(rpcCustomers) && rpcCustomers.length > 0) {
+        baseList = rpcCustomers
+      } else {
+        // Fallback to querying public profiles table directly
+        const { data: profiles, error } = await supabase
+          .from('profiles')
+          .select(`
+            id,
+            full_name,
+            phone,
+            avatar_url,
+            role,
+            created_at,
+            orders:orders ( id, status, total_amount, created_at )
+          `)
+          .order('created_at', { ascending: false })
+
+        if (!error && profiles && profiles.length > 0) {
+          baseList = profiles
+        }
+      }
+
+      if (baseList && baseList.length > 0) {
+        const mapped = baseList.map(p => {
           const ords = Array.isArray(p.orders) ? p.orders : []
           const validOrders = ords.filter(o => o.status !== 'cancelled' && o.status !== 'refunded')
           const totalSpend = validOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0)
@@ -624,7 +653,7 @@ export async function adminFetchCustomers() {
           return {
             id: p.id,
             full_name: p.full_name || 'Customer',
-            email: p.email || `${(p.full_name || 'user').toLowerCase().replace(/\s+/g, '.')}@example.com`,
+            email: p.email || null, // Never fabricate synthetic emails
             phone: p.phone || 'N/A',
             avatar_url: p.avatar_url,
             role: p.role || 'customer',
@@ -632,6 +661,7 @@ export async function adminFetchCustomers() {
             order_count: ords.length,
             total_spend: totalSpend,
             last_order_at: latestOrder?.created_at || null,
+            is_demo: false,
           }
         })
         return { data: mapped, error: null }
@@ -666,6 +696,7 @@ export async function adminFetchCustomers() {
 
     return {
       ...c,
+      is_demo: true,
       order_count: customerOrders.length,
       total_spend: totalSpend,
       last_order_at: latestOrder ? latestOrder.created_at : null,

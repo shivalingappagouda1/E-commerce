@@ -327,6 +327,11 @@ export default function AdminCustomersPage() {
                                   <ShieldCheck size={11} /> Admin
                                 </span>
                               )}
+                              {customer.is_demo && (
+                                <span className="inline-flex items-center text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200 rounded px-1.5 py-0.2">
+                                  Demo
+                                </span>
+                              )}
                             </div>
                             <div className="text-xs text-slate-400">
                               {customer.city ? `${customer.city}${customer.state ? `, ${customer.state}` : ''}` : 'Location unlisted'}
@@ -339,7 +344,13 @@ export default function AdminCustomersPage() {
                       <td className="py-3.5 px-4 text-xs space-y-0.5">
                         <div className="text-slate-700 font-medium flex items-center gap-1.5">
                           <Mail size={12} className="text-slate-400" />
-                          <span>{customer.email}</span>
+                          <span>
+                            {customer.email ? (
+                              customer.email
+                            ) : (
+                              <span className="text-slate-400 italic font-normal">Auth-protected</span>
+                            )}
+                          </span>
                         </div>
                         {customer.phone && customer.phone !== 'N/A' && (
                           <div className="text-slate-500 flex items-center gap-1.5">

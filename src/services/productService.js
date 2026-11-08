@@ -348,3 +348,105 @@ export async function submitProductReview({ productName, userName, rating, title
 
   return { data: newReview, error: null }
 }
+
+/* ============================================================
+   COUPONS VALIDATION
+   ============================================================ */
+export const COUPONS_STORAGE_KEY = 'shopkart_admin_coupons'
+
+export const DEFAULT_COUPONS = [
+  { code: 'SHOPKART10', type: 'percent', discount_type: 'percent', value: 10, discount_value: 10, min_order_value: 999 },
+  { code: 'WELCOME500', type: 'fixed', discount_type: 'fixed', value: 500, discount_value: 500, min_order_value: 4999 },
+]
+
+export async function validateCoupon(code, orderTotal = 0) {
+  const cleanCode = code ? String(code).trim().toUpperCase() : ''
+  if (!cleanCode) {
+    return { valid: false, error: 'Please enter a coupon code.' }
+  }
+
+  // 1. Try Supabase coupons table
+  if (supabase) {
+    try {
+      const { data: coupon, error } = await supabase
+        .from('coupons')
+        .select('*')
+        .eq('code', cleanCode)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      if (!error && coupon) {
+        if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+          return { valid: false, error: 'This coupon has expired.' }
+        }
+        if (coupon.max_uses && coupon.used_count >= coupon.max_uses) {
+          return { valid: false, error: 'This coupon has reached its maximum usage limit.' }
+        }
+        if (coupon.min_order_value && orderTotal < Number(coupon.min_order_value)) {
+          return {
+            valid: false,
+            error: `Coupon ${cleanCode} requires a minimum order value of ₹${coupon.min_order_value}.`,
+          }
+        }
+
+        return {
+          valid: true,
+          coupon: {
+            id: coupon.id,
+            code: coupon.code,
+            type: coupon.discount_type,
+            value: Number(coupon.discount_value),
+            min_order_value: Number(coupon.min_order_value || 0),
+          },
+        }
+      }
+    } catch {
+      // Fall through to local coupons
+    }
+  }
+
+  // 2. Fallback to Admin Coupons Storage or Default Coupons
+  let availableCoupons = [...DEFAULT_COUPONS]
+  try {
+    const stored = localStorage.getItem(COUPONS_STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        availableCoupons = parsed
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const matched = availableCoupons.find(
+    c => c.code && c.code.toUpperCase() === cleanCode && c.is_active !== false
+  )
+
+  if (!matched) {
+    return { valid: false, error: 'Invalid coupon code. Try SHOPKART10 or WELCOME500.' }
+  }
+
+  const minOrder = Number(matched.min_order_value || matched.minOrderValue || 0)
+  if (minOrder > 0 && orderTotal < minOrder) {
+    return {
+      valid: false,
+      error: `Coupon ${cleanCode} requires a minimum order value of ₹${minOrder}.`,
+    }
+  }
+
+  const discountType = matched.discount_type || matched.type || 'percent'
+  const discountVal = Number(matched.discount_value !== undefined ? matched.discount_value : matched.value)
+
+  return {
+    valid: true,
+    coupon: {
+      id: matched.id || cleanCode,
+      code: matched.code.toUpperCase(),
+      type: discountType,
+      value: discountVal,
+      min_order_value: minOrder,
+    },
+  }
+}
+

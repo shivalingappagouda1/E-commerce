@@ -11,8 +11,8 @@ import { createClient } from '@supabase/supabase-js'
  * Security policies on each table control what authenticated and anonymous
  * users can access. Never put the service-role key in frontend code.
  */
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL
+const supabaseKey = import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY
 
 /** Whether both env vars are present (does NOT mean the connection works). */
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)

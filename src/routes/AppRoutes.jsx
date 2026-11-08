@@ -30,7 +30,9 @@ import AdminInventoryPage    from '../pages/admin/AdminInventoryPage'
 import AdminBannersPage      from '../pages/admin/AdminBannersPage'
 import AdminCouponsPage      from '../pages/admin/AdminCouponsPage'
 import AdminReviewsPage      from '../pages/admin/AdminReviewsPage'
-import AdminPlaceholder      from '../pages/admin/AdminPlaceholder'
+import AdminCustomersPage    from '../pages/admin/AdminCustomersPage'
+import AdminAnalyticsPage    from '../pages/admin/AdminAnalyticsPage'
+import AdminSettingsPage     from '../pages/admin/AdminSettingsPage'
 
 /**
  * AppRoutes — central route configuration.
@@ -79,9 +81,9 @@ export default function AppRoutes() {
         <Route path="banners"    element={<AdminBannersPage />} />
         <Route path="coupons"    element={<AdminCouponsPage />} />
         <Route path="reviews"    element={<AdminReviewsPage />} />
-        <Route path="customers"  element={<AdminPlaceholder title="Customer Management"  description="View customer profiles and purchase history." />} />
-        <Route path="analytics"  element={<AdminPlaceholder title="Analytics"            description="Sales trends, revenue charts and insights." />} />
-        <Route path="settings"   element={<AdminPlaceholder title="Store Settings"       description="Configure store name, payment and shipping settings." />} />
+        <Route path="customers"  element={<AdminCustomersPage />} />
+        <Route path="analytics"  element={<AdminAnalyticsPage />} />
+        <Route path="settings"   element={<AdminSettingsPage />} />
       </Route>
     </Routes>
   )

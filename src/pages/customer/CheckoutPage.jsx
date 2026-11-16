@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   Plus,
   ShieldCheck,
   Truck,
-  CreditCard,
   Banknote,
   AlertCircle,
   ArrowLeft,
@@ -12,6 +11,7 @@ import {
   CheckCircle2,
   X,
   Lock,
+  QrCode,
 } from 'lucide-react'
 import { useCart } from '../../context/CartContext'
 import { useAuth } from '../../context/AuthContext'
@@ -23,9 +23,30 @@ import { formatPrice } from '../../utils/format'
 const FREE_SHIPPING_THRESHOLD = 999
 const SHIPPING_FEE = 99
 
-export default function CheckoutPage() {
+function generateIdempotencyKey() {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `idemp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+}
+
+export default function CheckoutPage({ initialItems = null } = {}) {
   const navigate = useNavigate()
-  const { items, totalPrice, totalItems, clearCart } = useCart()
+  const cart = useCart()
+  const items = initialItems || cart.items
+  const rawTotalPrice = initialItems
+    ? initialItems.reduce((acc, i) => acc + (Number(i.price) || 0) * (Number(i.quantity) || 1), 0)
+    : cart.totalPrice
+  const totalPrice = rawTotalPrice
+  const totalItems = initialItems
+    ? initialItems.reduce((acc, i) => acc + (Number(i.quantity) || 1), 0)
+    : cart.totalItems
+  const {
+    clearCart,
+    appliedCoupon,
+    applyCoupon,
+    removeCoupon,
+    couponDiscount,
+  } = cart
   const { user } = useAuth()
 
   const [addresses, setAddresses] = useState([])
@@ -36,9 +57,76 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  // Coupon state
+  // Idempotency Key Lifecycle:
+  // Persisted in sessionStorage so the same attempt key survives a page refresh.
+  // Regenerates only when order inputs genuinely change or after a confirmed order.
+  // useRef-based synchronous submission lock prevents double-click / React-batching races.
+  const submittingRef = useRef(false)
+
+  const sortedItemsFingerprint = [...items]
+    .map(i => {
+      const pId = i.product_id || i.productId || i.id || ''
+      const vId = i.variant_id || i.variantId || 'null'
+      const qty = i.quantity || 1
+      return `${pId}:${vId}:${qty}`
+    })
+    .sort()
+    .join(',')
+
+  const orderFingerprint = `${selectedAddressId || ''}|${paymentMethod || 'cod'}|${appliedCoupon?.code ? appliedCoupon.code.toUpperCase().trim() : ''}|${sortedItemsFingerprint}`
+  const prevFingerprintRef = useRef(null)
+
+  const [checkoutAttemptKey, setCheckoutAttemptKey] = useState(() => {
+    try {
+      const stored = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('shopkart_checkout_attempt') : null
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (parsed?.fingerprint === orderFingerprint && parsed?.idempotencyKey) {
+          return parsed.idempotencyKey
+        }
+      }
+    } catch {}
+    const newKey = generateIdempotencyKey()
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('shopkart_checkout_attempt', JSON.stringify({
+          fingerprint: orderFingerprint,
+          idempotencyKey: newKey,
+        }))
+      }
+    } catch {}
+    return newKey
+  })
+
+  // Synchronize idempotency key with order fingerprint changes
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem('shopkart_checkout_attempt')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (parsed?.fingerprint === orderFingerprint && parsed?.idempotencyKey) {
+          if (parsed.idempotencyKey !== checkoutAttemptKey) {
+            setCheckoutAttemptKey(parsed.idempotencyKey)
+          }
+          prevFingerprintRef.current = orderFingerprint
+          return
+        }
+      }
+    } catch {}
+
+    const newKey = generateIdempotencyKey()
+    setCheckoutAttemptKey(newKey)
+    try {
+      sessionStorage.setItem('shopkart_checkout_attempt', JSON.stringify({
+        fingerprint: orderFingerprint,
+        idempotencyKey: newKey,
+      }))
+    } catch {}
+    prevFingerprintRef.current = orderFingerprint
+  }, [orderFingerprint])
+
+  // Coupon UI feedback state
   const [couponCode, setCouponCode] = useState('')
-  const [appliedCoupon, setAppliedCoupon] = useState(null)
   const [couponError, setCouponError] = useState('')
   const [couponSuccess, setCouponSuccess] = useState('')
 
@@ -69,16 +157,6 @@ export default function CheckoutPage() {
   // Shipping calculation
   const shippingFee = totalPrice >= FREE_SHIPPING_THRESHOLD || totalPrice === 0 ? 0 : SHIPPING_FEE
 
-  // Coupon calculation
-  let couponDiscount = 0
-  if (appliedCoupon) {
-    if (appliedCoupon.type === 'percent') {
-      couponDiscount = Math.round((totalPrice * appliedCoupon.value) / 100)
-    } else if (appliedCoupon.type === 'fixed') {
-      couponDiscount = Math.min(totalPrice, appliedCoupon.value)
-    }
-  }
-
   const finalPayable = Math.max(0, totalPrice - couponDiscount + shippingFee)
 
   async function handleApplyCoupon(e) {
@@ -95,7 +173,7 @@ export default function CheckoutPage() {
       return
     }
 
-    setAppliedCoupon(result.coupon)
+    applyCoupon(result.coupon)
     const discountText = result.coupon.type === 'percent'
       ? `${result.coupon.value}% discount applied!`
       : `₹${result.coupon.value} discount applied!`
@@ -103,7 +181,7 @@ export default function CheckoutPage() {
   }
 
   function handleRemoveCoupon() {
-    setAppliedCoupon(null)
+    removeCoupon()
     setCouponCode('')
     setCouponSuccess('')
     setCouponError('')
@@ -160,34 +238,57 @@ export default function CheckoutPage() {
   }
 
   async function handlePlaceOrder() {
+    // Synchronous ref-based guard prevents double-clicks and React-batching races.
+    // This fires before any await, making it race-condition-safe unlike useState.
+    if (submittingRef.current) return
+    submittingRef.current = true
+
     setError('')
+    setSubmitting(true)
+
     if (!selectedAddressId) {
       setError('Please select or add a delivery address.')
+      setSubmitting(false)
+      submittingRef.current = false
       return
     }
 
-    setSubmitting(true)
     const chosenAddress = addresses.find(a => a.id === selectedAddressId)
-    const { data: orderResult, error: orderError } = await placeOrder({
-      addressId: selectedAddressId,
-      notes: `Payment method: ${paymentMethod.toUpperCase()}${appliedCoupon ? ` | Coupon: ${appliedCoupon.code}` : ''}`,
-      cartItems: items,
-      subtotal: totalPrice,
-      discountAmount: couponDiscount,
-      shippingAmount: shippingFee,
-      totalAmount: finalPayable,
-      address: chosenAddress,
-    })
 
-    setSubmitting(false)
+    try {
+      const { data: orderResult, error: orderError } = await placeOrder({
+        addressId: selectedAddressId,
+        notes: `Payment method: ${paymentMethod.toUpperCase()}${appliedCoupon ? ` | Coupon: ${appliedCoupon.code}` : ''}`,
+        couponCode: appliedCoupon?.code || null,
+        paymentProvider: paymentMethod,
+        idempotencyKey: checkoutAttemptKey,
+        cartItems: items,
+        subtotal: totalPrice,
+        discountAmount: couponDiscount,
+        shippingAmount: shippingFee,
+        totalAmount: finalPayable,
+        address: chosenAddress,
+      })
 
-    if (orderError) {
-      setError(orderError.message || 'Failed to place order. Please try again.')
-      return
+      if (orderError) {
+        setError(orderError.message || 'Failed to place order. Please try again.')
+        return
+      }
+
+      // Rotate the idempotency key and clear sessionStorage only after confirmed success
+      const nextKey = generateIdempotencyKey()
+      setCheckoutAttemptKey(nextKey)
+      try { sessionStorage.removeItem('shopkart_checkout_attempt') } catch {}
+      clearCart()
+      navigate(`/order-success/${orderResult.id}`)
+    } catch (unexpected) {
+      setError('An unexpected error occurred. Please try again.')
+      console.error('[CheckoutPage] Unexpected error in handlePlaceOrder:', unexpected)
+    } finally {
+      // Always release the submission lock so the UI recovers from any path
+      setSubmitting(false)
+      submittingRef.current = false
     }
-
-    clearCart()
-    navigate(`/order-success/${orderResult.id}`)
   }
 
   // Estimated delivery preview
@@ -364,8 +465,8 @@ export default function CheckoutPage() {
                   return (
                     <div
                       key={addr.id}
-                      onClick={() => setSelectedAddressId(addr.id)}
-                      className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3.5 ${
+                      onClick={() => !submitting && setSelectedAddressId(addr.id)}
+                      className={`p-4 rounded-2xl border transition-all flex items-start gap-3.5 ${submitting ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'} ${
                         isSelected
                           ? 'border-brand-500 bg-brand-50/20 ring-2 ring-brand-500/20 shadow-sm'
                           : 'border-slate-200 hover:border-slate-300 bg-white'
@@ -376,6 +477,7 @@ export default function CheckoutPage() {
                         name="delivery_address"
                         checked={isSelected}
                         onChange={() => setSelectedAddressId(addr.id)}
+                        disabled={submitting}
                         className="mt-1 accent-brand-500 h-4 w-4"
                       />
                       <div className="flex-1 text-xs space-y-1">
@@ -409,8 +511,8 @@ export default function CheckoutPage() {
             <div className="space-y-3">
               {/* COD */}
               <div
-                onClick={() => setPaymentMethod('cod')}
-                className={`p-4 rounded-2xl border cursor-pointer flex items-center justify-between transition-all ${
+                onClick={() => !submitting && setPaymentMethod('cod')}
+                className={`p-4 rounded-2xl border flex items-center justify-between transition-all ${submitting ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'} ${
                   paymentMethod === 'cod'
                     ? 'border-brand-500 bg-brand-50/20 ring-2 ring-brand-500/20'
                     : 'border-slate-200 hover:border-slate-300'
@@ -430,36 +532,57 @@ export default function CheckoutPage() {
                   name="payment"
                   checked={paymentMethod === 'cod'}
                   onChange={() => setPaymentMethod('cod')}
+                  disabled={submitting}
                   className="accent-brand-500 h-4 w-4"
                 />
               </div>
 
-              {/* Online Payment (UPI / Cards Simulation) */}
+              {/* PhonePe / UPI QR */}
               <div
-                onClick={() => setPaymentMethod('online')}
-                className={`p-4 rounded-2xl border cursor-pointer flex items-center justify-between transition-all ${
-                  paymentMethod === 'online'
-                    ? 'border-brand-500 bg-brand-50/20 ring-2 ring-brand-500/20'
+                onClick={() => !submitting && setPaymentMethod('phonepe')}
+                className={`p-4 rounded-2xl border flex items-center justify-between transition-all ${submitting ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'} ${
+                  paymentMethod === 'phonepe'
+                    ? 'border-purple-500 bg-purple-50/20 ring-2 ring-purple-500/20 shadow-sm'
                     : 'border-slate-200 hover:border-slate-300'
                 }`}
               >
                 <div className="flex items-center gap-3.5">
-                  <div className="w-10 h-10 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
-                    <CreditCard size={22} />
+                  <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                    <QrCode size={22} />
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-slate-900">Instant UPI / Cards / Net Banking</p>
-                    <p className="text-[11px] text-slate-500">Fast, secure 1-click checkout simulator</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-bold text-slate-900">PhonePe / UPI QR</p>
+                      <span className="bg-purple-100 text-purple-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        RECOMMENDED
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">Scan QR with PhonePe, GPay, Paytm & submit 12-digit UTR</p>
                   </div>
                 </div>
                 <input
                   type="radio"
                   name="payment"
-                  checked={paymentMethod === 'online'}
-                  onChange={() => setPaymentMethod('online')}
-                  className="accent-brand-500 h-4 w-4"
+                  checked={paymentMethod === 'phonepe'}
+                  onChange={() => setPaymentMethod('phonepe')}
+                  disabled={submitting}
+                  className="accent-purple-600 h-4 w-4"
                 />
               </div>
+
+              {/* Informational callout for PhonePe selection */}
+              {paymentMethod === 'phonepe' && (
+                <div className="bg-purple-50/70 border border-purple-200/80 rounded-2xl p-3.5 text-xs text-purple-900 flex items-start gap-2.5">
+                  <QrCode size={18} className="text-purple-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">PhonePe UPI Payment Instructions</p>
+                    <p className="text-[11px] text-purple-800 mt-0.5 leading-relaxed">
+                      After confirming your order, a static PhonePe QR code will be presented.
+                      Complete payment in PhonePe or any UPI app and submit your 12-digit UTR within 48 hours to confirm your order.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -584,12 +707,20 @@ export default function CheckoutPage() {
               <button
                 onClick={handlePlaceOrder}
                 disabled={submitting || !selectedAddressId}
-                className="w-full bg-brand-500 hover:bg-brand-600 disabled:bg-slate-300 text-white font-bold text-sm py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-brand-500/25 transition-all"
+                className={`w-full text-white font-bold text-sm py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all ${
+                  paymentMethod === 'phonepe'
+                    ? 'bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 shadow-purple-600/25'
+                    : 'bg-brand-500 hover:bg-brand-600 disabled:bg-slate-300 shadow-brand-500/25'
+                }`}
               >
                 {submitting ? (
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <span>Confirm & Place Order • {formatPrice(finalPayable)}</span>
+                  <span>
+                    {paymentMethod === 'phonepe'
+                      ? `Confirm & Pay via PhonePe QR • ${formatPrice(finalPayable)}`
+                      : `Confirm & Place Order (COD) • ${formatPrice(finalPayable)}`}
+                  </span>
                 )}
               </button>
             )}

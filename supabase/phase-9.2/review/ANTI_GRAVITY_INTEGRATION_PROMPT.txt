@@ -1,0 +1,47 @@
+ANTI-GRAVITY TASK — INTEGRATE THE SHOPKART PHASE 9.2 CORRECTION KIT
+
+Work only in the existing ShopKart project. Do not execute SQL against Supabase, do not change remote data, do not commit, push, deploy, or alter project secrets.
+
+1. Read the supplied ZIP's README first.
+2. Inspect the actual current files:
+   - supabase/phase-9.2/migration.sql
+   - supabase/phase-9.2/rollback.sql
+   - supabase/phase-9.2/verification.sql
+   - supabase/phase-9.2/security-audit.md
+   - supabase/phase-9.2/README.md
+   - src/services/authService.js
+   - the previous split scripts, if present.
+3. Treat the supplied `snapshot_compatibility_check.sql` and `verification.sql` as read-only diagnostics. Place them in `supabase/phase-9.2/review/` or integrate their checks without changing their read-only nature.
+4. PRIMARY FIX — rollback.sql:
+   - Make its schema contract match the exact snapshot tables/columns created by the current migration.
+   - Restore all 17 table ACL snapshots and all 9 function ACL snapshots, not only is_admin().
+   - Restore policy roles from policy_snapshot.
+   - Handle Storage policies only when creation tracking, marker, command, roles, USING, and WITH CHECK all match the exact Phase 9.2-created definition. Do not use partial LIKE matching as proof of identity.
+   - Never delete the bucket or storage objects.
+   - Preserve original comments, including NULL comments.
+   - Preserve ACL grant options/grantors/NULL ACL semantics only where supported SQL can restore them exactly. If exact restoration cannot be guaranteed, abort with an explicit error and document manual recovery. Never claim exact rollback falsely.
+5. migration.sql:
+   - Add a version/schema guard before reusing any existing phase9_2_private snapshot tables. CREATE TABLE IF NOT EXISTS alone is not sufficient.
+   - Ensure the snapshot is complete before any permission changes.
+   - Keep the explicit policy allowlist; abort on missing, duplicate, unexpected, or definition-mismatched policies.
+   - Keep public storefront SELECT behavior as intended, but do not expose coupon secrets or customer data.
+   - Confirm avatar path from authService.js. The reported path is avatars/${userId}.${ext}; policy must enforce exactly one folder segment and user UUID filename.
+   - Do not modify extension-owned functions.
+6. verification.sql:
+   - Keep strictly read-only.
+   - Check all seven table privileges (SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER) for anon and authenticated across all 17 tables.
+   - Check effective privileges, including PUBLIC/inherited grants.
+   - Check all nine functions and exact intended EXECUTE access.
+   - Check all required policy roles and full policy definitions, not just names or partial fragments.
+   - Check snapshot table columns, row counts (17 tables, 9 functions), policy snapshot completeness, Storage tracker status, bucket configuration, and exact Storage policy definitions.
+   - Use PASS / FAIL / NEEDS MANUAL REVIEW honestly. Do not hardcode PASS.
+7. README.md and security-audit.md:
+   - Match the actual five deliverables and exact filenames.
+   - Remove unsupported claims of exact rollback, complete security, or test success unless supported by reproducible test output.
+   - State that current_database() does not verify the Supabase project ref; manual Dashboard confirmation is required.
+   - State that extension allowlisting does not replace MIME/content validation.
+8. Add/update local static tests that assert the actual SQL contracts and reject the old rollback schema fields if the migration does not define them.
+9. Run only local static tests, lint, and build. Report exact commands and actual results.
+10. Return a file-by-file diff summary and list every unresolved blocker.
+
+Do not mark READY FOR STAGING EXECUTION. Do not run any SQL. Stop after local integration and report.

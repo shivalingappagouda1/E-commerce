@@ -44,8 +44,9 @@ BEGIN
 END;
 $$;
 
--- Revoke public execution; enforce explicit invocation
+-- Revoke public & anonymous execution; enforce explicit invocation
 REVOKE ALL ON FUNCTION public.get_admin_customers() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.get_admin_customers() FROM anon;
 GRANT EXECUTE ON FUNCTION public.get_admin_customers() TO authenticated;
 
 

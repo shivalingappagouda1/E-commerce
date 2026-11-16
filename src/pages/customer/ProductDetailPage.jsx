@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   Heart, ShoppingCart, Star, ShieldCheck, CheckCircle2,
@@ -22,7 +22,7 @@ export default function ProductDetailPage() {
   const { slug } = useParams()
   const navigate = useNavigate()
   const { addItem, isInCart } = useCart()
-  const { toggle, isWishlisted } = useWishlist()
+  const { toggle, isWishlisted, isItemPending } = useWishlist()
   const { user, profile } = useAuth()
 
   const [product, setProduct] = useState(null)
@@ -45,6 +45,8 @@ export default function ProductDetailPage() {
   const [reviewBody, setReviewBody] = useState('')
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [reviewSuccess, setReviewSuccess] = useState(false)
+  const [reviewError, setReviewError] = useState('')
+  const reviewSubmitLockRef = useRef(false)
 
   // Added to cart feedback toast
   const [addedToast, setAddedToast] = useState(false)
@@ -59,9 +61,10 @@ export default function ProductDetailPage() {
       }
       setLoading(false)
 
-      // Fetch reviews
-      if (data?.name) {
-        fetchProductReviews(data.name).then(({ data: revs }) => {
+      // Fetch reviews by product UUID (falling back to name for demo mode)
+      const reviewTarget = data?.id || data?.name
+      if (reviewTarget) {
+        fetchProductReviews(reviewTarget).then(({ data: revs }) => {
           setReviews(revs || [])
         })
       }
@@ -100,11 +103,14 @@ export default function ProductDetailPage() {
   }
 
   const wishlisted = isWishlisted(product.id)
+  const wishPending = isItemPending(product.id)
   const inCart = isInCart(product.id)
   const isAvailable = product.inStock !== false && product.is_active !== false
 
   // Variant adjustment
-  const currentPrice = selectedVariant?.price || product.price
+  const currentPrice = selectedVariant?.price !== undefined
+    ? Number(selectedVariant.price)
+    : (Number(product.price) + Number(selectedVariant?.price_delta || 0))
   const originalPrice = product.original_price || product.originalPrice || currentPrice
   const discountPercent = product.discount_percent || product.discount || (
     originalPrice > currentPrice ? Math.round(((originalPrice - currentPrice) / originalPrice) * 100) : 0
@@ -139,30 +145,59 @@ export default function ProductDetailPage() {
 
   async function handleReviewSubmit(e) {
     e.preventDefault()
-    if (!reviewTitle.trim() || !reviewBody.trim()) return
 
+    // Synchronous double-submission lock before React re-renders disabled button state
+    if (reviewSubmitLockRef.current || reviewSubmitting) return
+
+    setReviewError('')
+
+    if (!reviewTitle.trim() || !reviewBody.trim()) {
+      setReviewError('Please provide both a review headline and comments.')
+      return
+    }
+
+    reviewSubmitLockRef.current = true
     setReviewSubmitting(true)
     const reviewerName = profile?.full_name || user?.email?.split('@')[0] || 'Verified Buyer'
 
-    await submitProductReview({
-      productId: product.id,
-      productName: product.name,
-      userName: reviewerName,
-      rating: newRating,
-      title: reviewTitle.trim(),
-      body: reviewBody.trim(),
-    })
+    try {
+      const { data: reviewData, error: submitErr } = await submitProductReview({
+        productId: product.id,
+        productName: product.name,
+        userName: reviewerName,
+        rating: newRating,
+        title: reviewTitle.trim(),
+        body: reviewBody.trim(),
+      })
 
-    setReviewSubmitting(false)
-    setReviewSuccess(true)
-    setReviewModalOpen(false)
-    setReviewTitle('')
-    setReviewBody('')
+      if (submitErr || !reviewData) {
+        setReviewError(submitErr?.message || 'Failed to submit review. Please try again.')
+        return
+      }
 
-    // Refresh reviews
-    const { data: updatedRevs } = await fetchProductReviews(product.name)
-    setReviews(updatedRevs || [])
-    setTimeout(() => setReviewSuccess(false), 4000)
+      setReviewSuccess(true)
+      setReviewModalOpen(false)
+      setReviewTitle('')
+      setReviewBody('')
+      setReviewError('')
+
+      // Isolated review refresh: a refresh error must not turn a successful submission into a failure
+      try {
+        const refreshTarget = product?.id || product?.name
+        const { data: updatedRevs } = await fetchProductReviews(refreshTarget)
+        if (updatedRevs) setReviews(updatedRevs)
+      } catch (refreshErr) {
+        console.warn('[ProductDetailPage] Non-fatal error refreshing reviews:', refreshErr)
+      }
+
+      setTimeout(() => setReviewSuccess(false), 4000)
+    } catch (err) {
+      console.error('[ProductDetailPage] Exception during review submission:', err)
+      setReviewError(err?.message || 'An unexpected error occurred while submitting your review.')
+    } finally {
+      reviewSubmitLockRef.current = false
+      setReviewSubmitting(false)
+    }
   }
 
   // Multi-image list
@@ -205,8 +240,14 @@ export default function ProductDetailPage() {
 
             {/* Wishlist Button */}
             <button
-              onClick={() => toggle(product)}
-              className={`absolute top-4 right-4 p-3 rounded-full border shadow-xs transition-colors cursor-pointer ${
+              onClick={() => {
+                if (!wishPending) toggle(product)
+              }}
+              disabled={wishPending}
+              aria-busy={wishPending}
+              className={`absolute top-4 right-4 p-3 rounded-full border shadow-xs transition-colors ${
+                wishPending ? 'opacity-60 cursor-wait' : 'cursor-pointer'
+              } ${
                 wishlisted
                   ? 'bg-red-50 text-red-500 border-red-200 shadow-sm'
                   : 'bg-white text-slate-400 border-slate-200 hover:text-red-500'
@@ -301,7 +342,7 @@ export default function ProductDetailPage() {
                         : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                     }`}
                   >
-                    {v.name || v.color || v.size}
+                    {v.name || (v.variant_value ? `${v.variant_type ? `${v.variant_type}: ` : ''}${v.variant_value}` : (v.color || v.size || 'Default'))}
                   </button>
                 ))}
               </div>
@@ -489,13 +530,15 @@ export default function ProductDetailPage() {
               <div key={rev.id} className="pt-4 first:pt-0 space-y-2 text-xs">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-slate-800">{rev.user_name || 'Verified Buyer'}</span>
+                    <span className="font-bold text-slate-800">{rev.profiles?.full_name || rev.user_name || 'Verified Buyer'}</span>
                     <span className="text-[10px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-200">
                       Verified
                     </span>
                   </div>
                   <span className="text-slate-400 text-[11px]">
-                    {new Date(rev.created_at || Date.now()).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {rev.created_at
+                      ? new Date(rev.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })
+                      : 'Recently'}
                   </span>
                 </div>
 
@@ -530,10 +573,24 @@ export default function ProductDetailPage() {
           <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6 space-y-4 animate-in fade-in duration-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-bold text-base text-slate-900">Write a Review</h3>
-              <button onClick={() => setReviewModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button
+                type="button"
+                onClick={() => {
+                  setReviewModalOpen(false)
+                  setReviewError('')
+                }}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
                 <X size={18} />
               </button>
             </div>
+
+            {reviewError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
+                <AlertCircle size={16} className="text-red-600 shrink-0" />
+                <span>{reviewError}</span>
+              </div>
+            )}
 
             <form onSubmit={handleReviewSubmit} className="space-y-4 text-xs">
               <div>
@@ -582,15 +639,18 @@ export default function ProductDetailPage() {
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setReviewModalOpen(false)}
-                  className="px-4 py-2 border border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50"
+                  onClick={() => {
+                    setReviewModalOpen(false)
+                    setReviewError('')
+                  }}
+                  className="px-4 py-2 border border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={reviewSubmitting}
-                  className="px-5 py-2 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-xl shadow-xs"
+                  className="px-5 py-2 bg-brand-500 hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-xs cursor-pointer"
                 >
                   {reviewSubmitting ? 'Submitting...' : 'Submit Review'}
                 </button>

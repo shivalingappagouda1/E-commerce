@@ -2,22 +2,23 @@ import { useState } from 'react'
 import { Outlet, NavLink, Link } from 'react-router-dom'
 import {
   LayoutDashboard, Package, Tags, Warehouse, ShoppingBag,
-  Users, Image, Ticket, Star, BarChart3, Settings,
+  CreditCard, Users, Image, Ticket, Star, BarChart3, Settings,
   Menu, X, ChevronRight, LogOut, Bell
 } from 'lucide-react'
 
 const NAV_ITEMS = [
-  { label: 'Dashboard',   to: '/admin',               icon: LayoutDashboard, end: true },
-  { label: 'Products',    to: '/admin/products',       icon: Package },
-  { label: 'Categories',  to: '/admin/categories',     icon: Tags },
-  { label: 'Inventory',   to: '/admin/inventory',      icon: Warehouse },
-  { label: 'Orders',      to: '/admin/orders',         icon: ShoppingBag },
-  { label: 'Customers',   to: '/admin/customers',      icon: Users },
-  { label: 'Banners',     to: '/admin/banners',        icon: Image },
-  { label: 'Coupons',     to: '/admin/coupons',        icon: Ticket },
-  { label: 'Reviews',     to: '/admin/reviews',        icon: Star },
-  { label: 'Analytics',   to: '/admin/analytics',      icon: BarChart3 },
-  { label: 'Settings',    to: '/admin/settings',       icon: Settings },
+  { label: 'Dashboard',             to: '/admin',               icon: LayoutDashboard, end: true },
+  { label: 'Products',              to: '/admin/products',       icon: Package },
+  { label: 'Categories',            to: '/admin/categories',     icon: Tags },
+  { label: 'Inventory',             to: '/admin/inventory',      icon: Warehouse },
+  { label: 'Orders',                to: '/admin/orders',         icon: ShoppingBag },
+  { label: 'Payment Verification',  to: '/admin/payments',       icon: CreditCard },
+  { label: 'Customers',             to: '/admin/customers',      icon: Users },
+  { label: 'Banners',               to: '/admin/banners',        icon: Image },
+  { label: 'Coupons',               to: '/admin/coupons',        icon: Ticket },
+  { label: 'Reviews',               to: '/admin/reviews',        icon: Star },
+  { label: 'Analytics',             to: '/admin/analytics',      icon: BarChart3 },
+  { label: 'Settings',              to: '/admin/settings',       icon: Settings },
 ]
 
 export default function AdminLayout() {

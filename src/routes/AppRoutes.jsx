@@ -21,6 +21,9 @@ const CheckoutPage          = lazy(() => import('../pages/customer/CheckoutPage'
 const OrderConfirmationPage = lazy(() => import('../pages/customer/OrderConfirmationPage'))
 const OrdersPage            = lazy(() => import('../pages/customer/OrdersPage'))
 const ProfilePage           = lazy(() => import('../pages/customer/ProfilePage'))
+const ForgotPasswordPage    = lazy(() => import('../pages/customer/ForgotPasswordPage'))
+const ResetPasswordPage     = lazy(() => import('../pages/customer/ResetPasswordPage'))
+const PlaceholderPage       = lazy(() => import('../pages/customer/PlaceholderPage'))
 const NotFoundPage          = lazy(() => import('../pages/customer/NotFoundPage'))
 
 // Admin pages (Lazy loaded — only downloaded by authenticated admins)
@@ -28,6 +31,7 @@ const AdminDashboard        = lazy(() => import('../pages/admin/AdminDashboard')
 const AdminProductsPage     = lazy(() => import('../pages/admin/AdminProductsPage'))
 const AdminCategoriesPage   = lazy(() => import('../pages/admin/AdminCategoriesPage'))
 const AdminOrdersPage       = lazy(() => import('../pages/admin/AdminOrdersPage'))
+const AdminPaymentVerificationPage = lazy(() => import('../pages/admin/AdminPaymentVerificationPage'))
 const AdminInventoryPage    = lazy(() => import('../pages/admin/AdminInventoryPage'))
 const AdminBannersPage      = lazy(() => import('../pages/admin/AdminBannersPage'))
 const AdminCouponsPage      = lazy(() => import('../pages/admin/AdminCouponsPage'))
@@ -74,10 +78,24 @@ export default function AppRoutes() {
           <Route path="profile"                  element={<AuthGuard requireAuth={true}><ProfilePage /></AuthGuard>} />
           <Route path="login"                    element={<LoginPage />} />
           <Route path="register"                 element={<RegisterPage />} />
-          <Route path="featured"                 element={<CategoryPage />} />
-          <Route path="best-sellers"             element={<CategoryPage />} />
-          <Route path="trending"                 element={<CategoryPage />} />
-          <Route path="deals"                    element={<CategoryPage />} />
+          <Route path="forgot-password"          element={<ForgotPasswordPage />} />
+          <Route path="reset-password"           element={<ResetPasswordPage />} />
+          <Route path="featured"                 element={<CategoryPage feed="featured" />} />
+          <Route path="best-sellers"             element={<CategoryPage feed="best-sellers" />} />
+          <Route path="trending"                 element={<CategoryPage feed="trending" />} />
+          <Route path="deals"                    element={<CategoryPage feed="deals" />} />
+          {/* Informational & Policy Routes */}
+          <Route path="about"                    element={<PlaceholderPage />} />
+          <Route path="careers"                  element={<PlaceholderPage />} />
+          <Route path="press"                    element={<PlaceholderPage />} />
+          <Route path="blog"                     element={<PlaceholderPage />} />
+          <Route path="help"                     element={<PlaceholderPage />} />
+          <Route path="returns"                  element={<PlaceholderPage />} />
+          <Route path="track-order"              element={<PlaceholderPage />} />
+          <Route path="shipping"                 element={<PlaceholderPage />} />
+          <Route path="privacy"                  element={<PlaceholderPage />} />
+          <Route path="terms"                    element={<PlaceholderPage />} />
+          <Route path="cookies"                  element={<PlaceholderPage />} />
           <Route path="*"                        element={<NotFoundPage />} />
         </Route>
 
@@ -95,6 +113,7 @@ export default function AppRoutes() {
           <Route path="categories" element={<AdminCategoriesPage />} />
           <Route path="inventory"  element={<AdminInventoryPage />} />
           <Route path="orders"     element={<AdminOrdersPage />} />
+          <Route path="payments"   element={<AdminPaymentVerificationPage />} />
           <Route path="banners"    element={<AdminBannersPage />} />
           <Route path="coupons"    element={<AdminCouponsPage />} />
           <Route path="reviews"    element={<AdminReviewsPage />} />

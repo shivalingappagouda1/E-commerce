@@ -1,24 +1,36 @@
 /**
  * Products Service
  *
- * When Supabase is configured, this module fetches from the database.
- * When it is not configured, it falls back to demo data in localStorage (seeded from sampleData).
+ * When Supabase is configured, this module fetches strictly from the database.
+ * It NEVER silently substitutes sample/demo products when the database returns
+ * an empty result or an error.
+ *
+ * When Supabase is not configured, it falls back to explicit demo data in localStorage
+ * (seeded from sampleData).
  * UI components never import sample data directly — they always go through here.
  */
-import { supabase } from '../lib/supabase'
+import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import {
   SAMPLE_PRODUCTS,
   SAMPLE_CATEGORIES,
   SAMPLE_BANNERS,
 } from '../utils/sampleData'
+import { isValidUUID } from './cartService'
 
 /* ---- Unified Demo Storage Keys ---- */
 export const PRODUCTS_STORAGE_KEY = 'shopkart_admin_products'
 export const CATEGORIES_STORAGE_KEY = 'shopkart_admin_categories'
 export const BANNERS_STORAGE_KEY = 'shopkart_admin_banners'
+export const REVIEWS_STORAGE = 'shopkart_admin_reviews'
+export const COUPONS_STORAGE_KEY = 'shopkart_admin_coupons'
+
+export const DEFAULT_COUPONS = [
+  { code: 'SHOPKART10', type: 'percent', discount_type: 'percent', value: 10, discount_value: 10, min_order_value: 999 },
+  { code: 'WELCOME500', type: 'fixed', discount_type: 'fixed', value: 500, discount_value: 500, min_order_value: 4999 },
+]
 
 /* ---- helpers ---- */
-const isMock = () => !supabase
+const isMock = () => !isSupabaseConfigured || !supabase
 
 function getLocalDemoProducts() {
   try {
@@ -30,15 +42,57 @@ function getLocalDemoProducts() {
     }
     const parsed = JSON.parse(raw)
     if (Array.isArray(parsed)) {
-      // Return parsed array as-is (including empty array [] when all products are deleted)
       return parsed
     }
     console.warn(`[productService] Invalid format in ${PRODUCTS_STORAGE_KEY}, expected array.`)
     return []
   } catch (err) {
-    // If JSON parsing fails, safely return empty array without overwriting user data
     console.error(`[productService] Error parsing ${PRODUCTS_STORAGE_KEY}:`, err)
     return []
+  }
+}
+
+/**
+ * Normalizes a database product record into the standard format expected
+ * by UI components, mapping joined image, category, and inventory relations.
+ */
+export function normalizeDatabaseProduct(p) {
+  if (!p) return null
+
+  // Resolve primary image from product_images or fallback
+  const primaryImg = Array.isArray(p.product_images) && p.product_images.length > 0
+    ? (p.product_images.find(img => img.is_primary)?.image_url || p.product_images[0]?.image_url)
+    : null
+  const image = p.image || primaryImg || 'https://placehold.co/400x400?text=ShopKart'
+
+  // Resolve stock quantity from inventory relation
+  const stock = Array.isArray(p.inventory) && p.inventory.length > 0 && p.inventory[0]?.quantity !== undefined
+    ? Number(p.inventory[0].quantity)
+    : (p.stock !== undefined ? Number(p.stock) : 99)
+
+  // Resolve category name from joined categories relation
+  const categoryName = p.category || (p.categories && !Array.isArray(p.categories) ? p.categories.name : (Array.isArray(p.categories) && p.categories[0]?.name ? p.categories[0].name : ''))
+
+  const price = Number(p.price)
+  const originalPrice = p.original_price ? Number(p.original_price) : (p.originalPrice ? Number(p.originalPrice) : price)
+  const discountPercent = p.discount_percent !== undefined && p.discount_percent !== null
+    ? Number(p.discount_percent)
+    : (p.discount !== undefined ? Number(p.discount) : (originalPrice > price ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0))
+
+  return {
+    ...p,
+    image,
+    category: categoryName,
+    price,
+    originalPrice,
+    original_price: originalPrice,
+    discount_percent: discountPercent,
+    discount: discountPercent,
+    stock,
+    inStock: p.inStock !== false && p.is_active !== false && stock > 0,
+    rating: Number(p.rating || 0),
+    reviewCount: Number(p.review_count || p.reviewCount || 0),
+    review_count: Number(p.review_count || p.reviewCount || 0),
   }
 }
 
@@ -48,11 +102,8 @@ function getLocalDemoProducts() {
  */
 function isProductAvailableForCustomer(product) {
   if (!product) return false
-  // Exclude inactive products
   if (product.is_active === false) return false
-  // Exclude products explicitly marked out of stock
   if (product.inStock === false) return false
-  // Exclude products with zero or negative stock quantity
   if (product.stock !== undefined && product.stock !== null && Number(product.stock) <= 0) return false
   if (Array.isArray(product.inventory) && product.inventory.length > 0) {
     const qty = product.inventory[0]?.quantity
@@ -65,86 +116,135 @@ function isProductAvailableForCustomer(product) {
    CATEGORIES
    ============================================================ */
 export async function fetchCategories() {
-  if (isMock()) {
+  if (!isMock()) {
     try {
-      const stored = localStorage.getItem(CATEGORIES_STORAGE_KEY)
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return { data: parsed.filter(c => c.is_active !== false), error: null }
-        }
+      const { data, error } = await supabase
+        .from('categories')
+        .select('id, name, slug, image_url')
+        .eq('is_active', true)
+        .order('sort_order')
+
+      if (error) {
+        console.error('[productService] Error fetching categories from Supabase:', error)
+        return { data: [], error }
       }
-    } catch { /* fallback */ }
-    return { data: SAMPLE_CATEGORIES, error: null }
+      return { data: data || [], error: null }
+    } catch (err) {
+      console.error('[productService] Exception fetching categories from Supabase:', err)
+      return { data: [], error: err }
+    }
   }
 
-  const { data, error } = await supabase
-    .from('categories')
-    .select('id, name, slug, image_url')
-    .eq('is_active', true)
-    .order('sort_order')
-
-  return { data, error }
+  // Explicit demo mode only
+  try {
+    const stored = localStorage.getItem(CATEGORIES_STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return { data: parsed.filter(c => c.is_active !== false), error: null }
+      }
+    }
+  } catch { /* fallback */ }
+  return { data: SAMPLE_CATEGORIES, error: null }
 }
 
 /* ============================================================
    BANNERS
    ============================================================ */
 export async function fetchBanners() {
-  if (isMock()) {
+  if (!isMock()) {
     try {
-      const stored = localStorage.getItem(BANNERS_STORAGE_KEY)
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return { data: parsed.filter(b => b.is_active !== false), error: null }
-        }
+      const { data, error } = await supabase
+        .from('banners')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order')
+
+      if (error) {
+        console.error('[productService] Error fetching banners from Supabase:', error)
+        return { data: [], error }
       }
-    } catch { /* fallback */ }
-    return { data: SAMPLE_BANNERS, error: null }
+      return { data: data || [], error: null }
+    } catch (err) {
+      console.error('[productService] Exception fetching banners from Supabase:', err)
+      return { data: [], error: err }
+    }
   }
 
-  const { data, error } = await supabase
-    .from('banners')
-    .select('*')
-    .eq('is_active', true)
-    .order('sort_order')
-
-  return { data, error }
+  // Explicit demo mode only
+  try {
+    const stored = localStorage.getItem(BANNERS_STORAGE_KEY)
+    if (stored === null) {
+      try {
+        localStorage.setItem(BANNERS_STORAGE_KEY, JSON.stringify(SAMPLE_BANNERS))
+      } catch {
+        // Ignore storage quota / write errors in restricted environments
+      }
+      return { data: [...SAMPLE_BANNERS], error: null }
+    }
+    const parsed = JSON.parse(stored)
+    if (Array.isArray(parsed)) {
+      const activeBanners = parsed
+        .filter(b => b && b.is_active !== false)
+        .sort((a, b) => Number(a?.sort_order ?? 0) - Number(b?.sort_order ?? 0))
+      return { data: activeBanners, error: null }
+    }
+    return { data: [], error: null }
+  } catch { /* fallback */ }
+  return { data: [...SAMPLE_BANNERS], error: null }
 }
 
 /* ============================================================
    PRODUCTS
    ============================================================ */
 export async function fetchProducts(filters = {}) {
-  if (supabase) {
+  if (!isMock()) {
     try {
       let query = supabase
         .from('products')
         .select(`
           id, name, slug, price, original_price, discount_percent,
-          rating, review_count, badge, is_featured,
-          categories ( name ),
-          product_images ( image_url, is_primary ),
+          rating, review_count, badge, is_featured, is_active,
+          categories ( id, name, slug ),
+          product_images ( id, image_url, is_primary ),
           inventory ( quantity )
         `)
         .eq('is_active', true)
 
-      if (filters.category) query = query.eq('category_id', filters.category)
-      if (filters.featured)  query = query.eq('is_featured', true)
-      if (filters.limit)     query = query.limit(filters.limit)
+      if (filters.category) {
+        if (isValidUUID(filters.category)) {
+          query = query.eq('category_id', filters.category)
+        }
+      }
+      if (filters.featured) query = query.eq('is_featured', true)
+      if (filters.limit) query = query.limit(filters.limit)
 
       const { data, error } = await query
-      if (!error && data && data.length > 0) {
-        return { data, error: null }
+      if (error) {
+        console.error('[productService] Error fetching products from Supabase:', error)
+        return { data: [], error }
       }
-    } catch {
-      // Fall through to local demo data
+
+      let normalized = (data || []).map(normalizeDatabaseProduct).filter(isProductAvailableForCustomer)
+
+      // If category filter was a slug/name rather than UUID, filter in-memory
+      if (filters.category && !isValidUUID(filters.category)) {
+        const catVal = String(filters.category).toLowerCase()
+        normalized = normalized.filter(p =>
+          (p.category && p.category.toLowerCase() === catVal) ||
+          (p.categories?.slug && p.categories.slug.toLowerCase() === catVal)
+        )
+      }
+
+      return { data: normalized, error: null }
+    } catch (err) {
+      console.error('[productService] Exception fetching products from Supabase:', err)
+      return { data: [], error: err }
     }
   }
 
+  // Explicit demo mode only when Supabase is not configured
   const products = getLocalDemoProducts()
-  // Customer storefront only displays active and in-stock products
   let result = products.filter(isProductAvailableForCustomer)
 
   if (filters.category) {
@@ -164,112 +264,164 @@ export async function fetchProducts(filters = {}) {
   return { data: result, error: null }
 }
 
-export async function fetchFeaturedProducts() {
-  return fetchProducts({ featured: true, limit: 8 })
+export async function fetchFeaturedProducts(limit = null) {
+  return fetchProducts({ featured: true, limit: limit || undefined })
 }
 
-export async function fetchBestSellers() {
-  if (supabase) {
+export async function fetchBestSellers(limit = null) {
+  if (!isMock()) {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('products')
-        .select('*, product_images(image_url, is_primary)')
+        .select(`
+          id, name, slug, price, original_price, discount_percent,
+          rating, review_count, badge, is_featured, is_active,
+          categories ( id, name, slug ),
+          product_images ( id, image_url, is_primary ),
+          inventory ( quantity )
+        `)
         .eq('is_active', true)
         .gte('rating', 4.5)
         .order('review_count', { ascending: false })
-        .limit(8)
 
-      if (!error && data && data.length > 0) {
-        return { data, error: null }
+      if (limit) query = query.limit(limit)
+
+      const { data, error } = await query
+      if (error) {
+        console.error('[productService] Error fetching best sellers from Supabase:', error)
+        return { data: [], error }
       }
-    } catch {
-      // Fall through
+
+      const normalized = (data || []).map(normalizeDatabaseProduct).filter(isProductAvailableForCustomer)
+      return { data: normalized, error: null }
+    } catch (err) {
+      console.error('[productService] Exception fetching best sellers from Supabase:', err)
+      return { data: [], error: err }
     }
   }
 
+  // Explicit demo mode only
   const { data } = await fetchProducts()
   const sorted = (data || [])
     .filter(p => (p.rating || 0) >= 4.5)
     .sort((a, b) => (b.review_count || b.reviewCount || 0) - (a.review_count || a.reviewCount || 0))
-    .slice(0, 8)
-  return { data: sorted, error: null }
+  return { data: limit ? sorted.slice(0, limit) : sorted, error: null }
 }
 
-export async function fetchTrendingProducts() {
-  if (supabase) {
+export async function fetchTrendingProducts(limit = null) {
+  if (!isMock()) {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('products')
-        .select('*, product_images(image_url, is_primary)')
+        .select(`
+          id, name, slug, price, original_price, discount_percent,
+          rating, review_count, badge, is_featured, is_active,
+          categories ( id, name, slug ),
+          product_images ( id, image_url, is_primary ),
+          inventory ( quantity )
+        `)
         .eq('is_active', true)
         .in('badge', ['Trending', 'Hot', 'Top Deal'])
-        .limit(8)
 
-      if (!error && data && data.length > 0) {
-        return { data, error: null }
+      if (limit) query = query.limit(limit)
+
+      const { data, error } = await query
+      if (error) {
+        console.error('[productService] Error fetching trending products from Supabase:', error)
+        return { data: [], error }
       }
-    } catch {
-      // Fall through
+
+      const normalized = (data || []).map(normalizeDatabaseProduct).filter(isProductAvailableForCustomer)
+      return { data: normalized, error: null }
+    } catch (err) {
+      console.error('[productService] Exception fetching trending products from Supabase:', err)
+      return { data: [], error: err }
     }
   }
 
+  // Explicit demo mode only
   const { data } = await fetchProducts()
   const sorted = (data || [])
     .filter(p => ['Trending', 'Hot', 'Top Deal'].includes(p.badge))
-    .slice(0, 8)
-  return { data: sorted, error: null }
+  return { data: limit ? sorted.slice(0, limit) : sorted, error: null }
 }
 
-export async function fetchDeals() {
-  if (supabase) {
+export async function fetchDeals(limit = null) {
+  if (!isMock()) {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('products')
-        .select('*, product_images(image_url, is_primary)')
+        .select(`
+          id, name, slug, price, original_price, discount_percent,
+          rating, review_count, badge, is_featured, is_active,
+          categories ( id, name, slug ),
+          product_images ( id, image_url, is_primary ),
+          inventory ( quantity )
+        `)
         .eq('is_active', true)
         .gte('discount_percent', 30)
         .order('discount_percent', { ascending: false })
-        .limit(6)
 
-      if (!error && data && data.length > 0) {
-        return { data, error: null }
+      if (limit) query = query.limit(limit)
+
+      const { data, error } = await query
+      if (error) {
+        console.error('[productService] Error fetching deals from Supabase:', error)
+        return { data: [], error }
       }
-    } catch {
-      // Fall through
+
+      const normalized = (data || []).map(normalizeDatabaseProduct).filter(isProductAvailableForCustomer)
+      return { data: normalized, error: null }
+    } catch (err) {
+      console.error('[productService] Exception fetching deals from Supabase:', err)
+      return { data: [], error: err }
     }
   }
 
+  // Explicit demo mode only
   const { data } = await fetchProducts()
   const sorted = (data || [])
     .filter(p => (p.discount_percent || p.discount || 0) >= 30)
     .sort((a, b) => (b.discount_percent || b.discount || 0) - (a.discount_percent || a.discount || 0))
-    .slice(0, 6)
-  return { data: sorted, error: null }
+  return { data: limit ? sorted.slice(0, limit) : sorted, error: null }
 }
 
 export async function fetchProductBySlug(slug) {
-  if (supabase) {
+  if (!slug) return { data: null, error: null }
+
+  if (!isMock()) {
     try {
       const { data, error } = await supabase
         .from('products')
         .select(`
-          *, categories(name, slug),
-          product_images(*),
-          product_variants(*),
-          inventory(*),
-          reviews(*, profiles(full_name, avatar_url))
+          *,
+          categories ( id, name, slug ),
+          product_images ( id, image_url, is_primary, sort_order ),
+          product_variants ( id, variant_type, variant_value, price_delta ),
+          inventory ( id, quantity, low_stock_at ),
+          reviews ( *, profiles ( full_name, avatar_url ) )
         `)
         .eq('slug', slug)
-        .single()
+        .eq('is_active', true)
+        .maybeSingle()
 
-      if (!error && data) {
-        return { data, error: null }
+      if (error) {
+        console.error('[productService] Error fetching product by slug from Supabase:', error)
+        return { data: null, error }
       }
-    } catch {
-      // Fall through
+
+      if (!data) {
+        return { data: null, error: null }
+      }
+
+      return { data: normalizeDatabaseProduct(data), error: null }
+    } catch (err) {
+      console.error('[productService] Exception fetching product by slug from Supabase:', err)
+      return { data: null, error: err }
     }
   }
 
+  // Explicit demo mode only
   const products = getLocalDemoProducts()
   const product = products.find(p => p.slug === slug) || null
   return { data: product, error: null }
@@ -278,32 +430,50 @@ export async function fetchProductBySlug(slug) {
 /* ============================================================
    REVIEWS
    ============================================================ */
-export const REVIEWS_STORAGE = 'shopkart_admin_reviews'
+export async function fetchProductReviews(productIdentifier) {
+  if (!isMock()) {
+    // In Supabase mode, strictly require a valid product UUID.
+    // If missing or invalid, immediately return an empty result without querying the database.
+    // Never execute an unfiltered reviews query against Supabase.
+    if (!productIdentifier || !isValidUUID(productIdentifier)) {
+      return { data: [], error: null }
+    }
 
-export async function fetchProductReviews(productName) {
-  if (supabase) {
     try {
       const { data, error } = await supabase
         .from('reviews')
         .select('*, profiles(full_name, avatar_url)')
+        .eq('product_id', productIdentifier)
         .eq('is_approved', true)
         .order('created_at', { ascending: false })
 
-      if (!error && data && data.length > 0) {
-        return { data, error: null }
+      if (error) {
+        console.error('[productService] Error fetching reviews from Supabase:', error)
+        return { data: [], error }
       }
-    } catch {
-      // Fall through to local reviews
+
+      return { data: data || [], error: null }
+    } catch (err) {
+      console.error('[productService] Exception fetching reviews from Supabase:', err)
+      return { data: [], error: err }
     }
   }
 
+  // Explicit demo mode only
   try {
     const stored = localStorage.getItem(REVIEWS_STORAGE)
     const reviews = stored ? JSON.parse(stored) : []
-    const matching = reviews.filter(r =>
-      (!productName || (r.product_name && r.product_name.toLowerCase().includes(productName.toLowerCase()))) &&
-      r.is_approved !== false
-    )
+    const matching = reviews.filter(r => {
+      if (r.is_approved === false) return false
+      if (!productIdentifier) return true
+      if (isValidUUID(productIdentifier)) {
+        return r.product_id === productIdentifier
+      }
+      return (
+        (r.product_name && r.product_name.toLowerCase().includes(String(productIdentifier).toLowerCase())) ||
+        (r.product_id && r.product_id === productIdentifier)
+      )
+    })
     return { data: matching, error: null }
   } catch {
     return { data: [], error: null }
@@ -311,6 +481,41 @@ export async function fetchProductReviews(productName) {
 }
 
 export async function submitProductReview({ productName, userName, rating, title, body, productId }) {
+  if (!isMock()) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        return { data: null, error: new Error('You must be signed in to submit a review.') }
+      }
+      if (!productId || !isValidUUID(productId)) {
+        return { data: null, error: new Error('A valid database product ID is required to submit a review.') }
+      }
+
+      const { data, error } = await supabase
+        .from('reviews')
+        .insert([{
+          product_id: productId,
+          user_id: user.id,
+          rating: Number(rating) || 5,
+          title,
+          body,
+          is_approved: false,
+        }])
+        .select()
+        .single()
+
+      if (error) {
+        console.error('[productService] Error submitting review to Supabase:', error)
+        return { data: null, error }
+      }
+      return { data, error: null }
+    } catch (err) {
+      console.error('[productService] Exception submitting review to Supabase:', err)
+      return { data: null, error: err }
+    }
+  }
+
+  // Explicit demo mode only
   const newReview = {
     id: `rev-${Date.now()}`,
     product_id: productId,
@@ -332,41 +537,20 @@ export async function submitProductReview({ productName, userName, rating, title
     console.error('Error saving review to local storage:', err)
   }
 
-  if (!isMock()) {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user && productId) {
-      await supabase.from('reviews').insert([{
-        product_id: productId,
-        user_id: user.id,
-        rating: Number(rating) || 5,
-        title,
-        body,
-        is_approved: false,
-      }])
-    }
-  }
-
   return { data: newReview, error: null }
 }
 
 /* ============================================================
    COUPONS VALIDATION
    ============================================================ */
-export const COUPONS_STORAGE_KEY = 'shopkart_admin_coupons'
-
-export const DEFAULT_COUPONS = [
-  { code: 'SHOPKART10', type: 'percent', discount_type: 'percent', value: 10, discount_value: 10, min_order_value: 999 },
-  { code: 'WELCOME500', type: 'fixed', discount_type: 'fixed', value: 500, discount_value: 500, min_order_value: 4999 },
-]
-
 export async function validateCoupon(code, orderTotal = 0) {
   const cleanCode = code ? String(code).trim().toUpperCase() : ''
   if (!cleanCode) {
     return { valid: false, error: 'Please enter a coupon code.' }
   }
 
-  // 1. Try Supabase coupons table
-  if (supabase) {
+  // 1. Live Supabase database coupons
+  if (!isMock()) {
     try {
       const { data: coupon, error } = await supabase
         .from('coupons')
@@ -375,37 +559,45 @@ export async function validateCoupon(code, orderTotal = 0) {
         .eq('is_active', true)
         .maybeSingle()
 
-      if (!error && coupon) {
-        if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
-          return { valid: false, error: 'This coupon has expired.' }
-        }
-        if (coupon.max_uses && coupon.used_count >= coupon.max_uses) {
-          return { valid: false, error: 'This coupon has reached its maximum usage limit.' }
-        }
-        if (coupon.min_order_value && orderTotal < Number(coupon.min_order_value)) {
-          return {
-            valid: false,
-            error: `Coupon ${cleanCode} requires a minimum order value of ₹${coupon.min_order_value}.`,
-          }
-        }
+      if (error) {
+        console.error('[productService] Error validating coupon with Supabase:', error)
+        return { valid: false, error: 'Could not validate coupon. Please try again.' }
+      }
 
+      if (!coupon) {
+        return { valid: false, error: 'Invalid coupon code.' }
+      }
+
+      if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+        return { valid: false, error: 'This coupon has expired.' }
+      }
+      if (coupon.max_uses && coupon.used_count >= coupon.max_uses) {
+        return { valid: false, error: 'This coupon has reached its maximum usage limit.' }
+      }
+      if (coupon.min_order_value && orderTotal < Number(coupon.min_order_value)) {
         return {
-          valid: true,
-          coupon: {
-            id: coupon.id,
-            code: coupon.code,
-            type: coupon.discount_type,
-            value: Number(coupon.discount_value),
-            min_order_value: Number(coupon.min_order_value || 0),
-          },
+          valid: false,
+          error: `Coupon ${cleanCode} requires a minimum order value of ₹${coupon.min_order_value}.`,
         }
       }
-    } catch {
-      // Fall through to local coupons
+
+      return {
+        valid: true,
+        coupon: {
+          id: coupon.id,
+          code: coupon.code,
+          type: coupon.discount_type,
+          value: Number(coupon.discount_value),
+          min_order_value: Number(coupon.min_order_value || 0),
+        },
+      }
+    } catch (err) {
+      console.error('[productService] Exception validating coupon with Supabase:', err)
+      return { valid: false, error: 'Could not validate coupon due to a server error.' }
     }
   }
 
-  // 2. Fallback to Admin Coupons Storage or Default Coupons
+  // 2. Explicit demo mode only: Fallback to Admin Coupons Storage or Default Coupons
   let availableCoupons = [...DEFAULT_COUPONS]
   try {
     const stored = localStorage.getItem(COUPONS_STORAGE_KEY)
@@ -449,4 +641,3 @@ export async function validateCoupon(code, orderTotal = 0) {
     },
   }
 }
-

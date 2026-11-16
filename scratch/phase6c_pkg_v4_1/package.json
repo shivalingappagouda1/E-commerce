@@ -1,0 +1,33 @@
+{
+  "name": "e-commerece",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "test:phase6c:pglite": "node scratch/test_pglite_runner.mjs",
+    "test:phase6c:concurrency": "node scratch/test_true_concurrent_connections.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
+    "lucide-react": "^1.70.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.5"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.16",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "^31.0.1",
+    "oxlint": "^1.81.0",
+    "pg": "^8.23.0",
+    "tailwindcss": "^4.3.5",
+    "vite": "^8.3.0"
+  }
+}

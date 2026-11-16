@@ -1,11 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import {
   User, Mail, Phone, MapPin, Plus, Trash2, Edit2,
   CheckCircle2, ShieldCheck, ShoppingBag, AlertCircle,
-  Save, X, Star
+  Save, X, Star, Upload, Loader2
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { isSupabaseConfigured } from '../../lib/supabase'
+import {
+  validateAvatarFile,
+  uploadAvatar,
+  removeAvatarObject,
+} from '../../services/authService'
 import {
   fetchAddresses,
   createAddress,
@@ -23,7 +29,7 @@ const AVATAR_OPTIONS = [
 ]
 
 export default function ProfilePage() {
-  const { user, profile, isAdmin } = useAuth()
+  const { user, profile, isAdmin, refreshProfile } = useAuth()
 
   // Tabs: 'profile' | 'addresses'
   const [activeTab, setActiveTab] = useState('profile')
@@ -35,6 +41,34 @@ export default function ProfilePage() {
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileSuccess, setProfileSuccess] = useState(false)
   const [profileError, setProfileError] = useState('')
+
+  // Avatar Upload state
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarStage, setAvatarStage] = useState('')
+  const [avatarError, setAvatarError] = useState('')
+  const [avatarSuccess, setAvatarSuccess] = useState(false)
+  const [avatarPreviewError, setAvatarPreviewError] = useState(false)
+  const fileInputRef = useRef(null)
+  const avatarUploadLockRef = useRef(false)
+  const profileSaveLockRef = useRef(false)
+  const activeUserIdRef = useRef(user?.id || null)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    activeUserIdRef.current = user?.id || null
+    avatarUploadLockRef.current = false
+    setAvatarUploading(false)
+    setAvatarStage('')
+    setAvatarError('')
+    setAvatarSuccess(false)
+  }, [user?.id])
 
   // Addresses state
   const [addresses, setAddresses] = useState([])
@@ -54,27 +88,36 @@ export default function ProfilePage() {
   const [addressError, setAddressError] = useState('')
   const [addressSuccess, setAddressSuccess] = useState(false)
 
-  // Initialize profile fields
+  // Initialize / reset profile fields cleanly when user or profile changes
   useEffect(() => {
+    setAvatarPreviewError(false)
     if (profile) {
       setFullName(profile.full_name || '')
       setPhone(profile.phone || '')
       setSelectedAvatar(profile.avatar_url || '')
     } else if (user) {
       setFullName(user.user_metadata?.full_name || user.email?.split('@')[0] || '')
+      setPhone('')
+      setSelectedAvatar('')
     } else {
       // Demo guest user info
-      const demoUser = JSON.parse(localStorage.getItem('shopkart_demo_user') || '{}')
-      setFullName(demoUser.full_name || 'Demo Customer')
-      setPhone(demoUser.phone || '+91 98765 43210')
-      setSelectedAvatar(demoUser.avatar_url || '')
+      try {
+        const demoUser = JSON.parse(localStorage.getItem('shopkart_demo_user') || '{}')
+        setFullName(demoUser.full_name || 'Demo Customer')
+        setPhone(demoUser.phone || '+91 98765 43210')
+        setSelectedAvatar(demoUser.avatar_url || '')
+      } catch {
+        setFullName('Demo Customer')
+        setPhone('')
+        setSelectedAvatar('')
+      }
     }
   }, [profile, user])
 
   // Load addresses
   useEffect(() => {
     loadAddressList()
-  }, [])
+  }, [user?.id])
 
   async function loadAddressList() {
     setAddressLoading(true)
@@ -83,9 +126,121 @@ export default function ProfilePage() {
     setAddressLoading(false)
   }
 
+  // Handle Avatar Upload from Device
+  async function handleAvatarFileChange(e) {
+    const file = e.target.files?.[0]
+    if (!file) {
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+
+    if (avatarUploadLockRef.current || avatarUploading) {
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+
+    setAvatarError('')
+    setAvatarSuccess(false)
+
+    const initiatingUserId = user?.id || null
+    const previousAvatar = selectedAvatar
+
+    if (!isSupabaseConfigured || !initiatingUserId) {
+      setAvatarError('Avatar upload requires a signed-in account connected to Supabase.')
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+
+    setAvatarStage('validating')
+    const validation = validateAvatarFile({ userId: initiatingUserId, file })
+    if (!validation.valid) {
+      setAvatarStage('')
+      setAvatarError(validation.error?.message || 'Selected image file is not supported.')
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+
+    avatarUploadLockRef.current = true
+    setAvatarUploading(true)
+    setAvatarStage('uploading')
+
+    try {
+      const uploadRes = await uploadAvatar({
+        userId: initiatingUserId,
+        file,
+        previousAvatarUrl: previousAvatar,
+      })
+
+      // Abort before profile mutation if user logged out or switched accounts mid-upload
+      if (!mountedRef.current || activeUserIdRef.current !== initiatingUserId) {
+        return
+      }
+
+      if (uploadRes.error || !uploadRes.url) {
+        setAvatarError(uploadRes.error?.message || 'Failed to upload avatar image. Please try again.')
+        return
+      }
+
+      setAvatarStage('saving')
+      const { error: updateErr } = await updateCustomerProfile({
+        avatar_url: uploadRes.url,
+        expectedUserId: initiatingUserId,
+      })
+
+      if (!mountedRef.current || activeUserIdRef.current !== initiatingUserId) {
+        return
+      }
+
+      if (updateErr) {
+        // Preserve previous avatar completely; roll back only newly created differing-extension object
+        if (!uploadRes.replacedExistingPath && uploadRes.storagePath) {
+          await removeAvatarObject(uploadRes.storagePath)
+        }
+        if (mountedRef.current && activeUserIdRef.current === initiatingUserId) {
+          setAvatarError('Image upload succeeded, but updating your profile failed. Previous avatar preserved.')
+        }
+        return
+      }
+
+      // Profile DB persistence succeeded for initiating user — update UI, clean up old object, refresh auth profile
+      setSelectedAvatar(uploadRes.url)
+      setAvatarPreviewError(false)
+      setAvatarSuccess(true)
+
+      if (uploadRes.previousStoragePath && activeUserIdRef.current === initiatingUserId) {
+        await removeAvatarObject(uploadRes.previousStoragePath)
+      }
+
+      if (mountedRef.current && activeUserIdRef.current === initiatingUserId && typeof refreshProfile === 'function') {
+        await refreshProfile(initiatingUserId)
+      }
+
+      setTimeout(() => {
+        if (mountedRef.current && activeUserIdRef.current === initiatingUserId) {
+          setAvatarSuccess(false)
+        }
+      }, 4000)
+    } catch {
+      if (mountedRef.current && activeUserIdRef.current === initiatingUserId) {
+        setAvatarError('An unexpected error occurred while uploading your avatar. Please try again.')
+      }
+    } finally {
+      if (mountedRef.current && activeUserIdRef.current === initiatingUserId) {
+        avatarUploadLockRef.current = false
+        setAvatarUploading(false)
+        setAvatarStage('')
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
   // Handle Profile Save
   async function handleProfileSubmit(e) {
     e.preventDefault()
+    if (profileSaveLockRef.current || profileSaving) return
+
     setProfileError('')
     setProfileSuccess(false)
 
@@ -94,19 +249,43 @@ export default function ProfilePage() {
       return
     }
 
+    const initiatingUserId = user?.id || null
+    profileSaveLockRef.current = true
     setProfileSaving(true)
-    const { error } = await updateCustomerProfile({
-      full_name: fullName.trim(),
-      phone: phone.trim(),
-      avatar_url: selectedAvatar,
-    })
-    setProfileSaving(false)
+    try {
+      const { error } = await updateCustomerProfile({
+        full_name: fullName.trim(),
+        phone: phone.trim(),
+        avatar_url: selectedAvatar,
+        expectedUserId: initiatingUserId,
+      })
 
-    if (error) {
-      setProfileError(error.message || 'Failed to update profile.')
-    } else {
-      setProfileSuccess(true)
-      setTimeout(() => setProfileSuccess(false), 3000)
+      if (!mountedRef.current || (initiatingUserId && activeUserIdRef.current !== initiatingUserId)) {
+        return
+      }
+
+      if (error) {
+        setProfileError(error.message || 'Failed to update profile.')
+      } else {
+        setProfileSuccess(true)
+        if (typeof refreshProfile === 'function') {
+          await refreshProfile(initiatingUserId)
+        }
+        setTimeout(() => {
+          if (mountedRef.current) {
+            setProfileSuccess(false)
+          }
+        }, 3000)
+      }
+    } catch {
+      if (mountedRef.current) {
+        setProfileError('An unexpected error occurred while saving your profile.')
+      }
+    } finally {
+      if (mountedRef.current) {
+        profileSaveLockRef.current = false
+        setProfileSaving(false)
+      }
     }
   }
 
@@ -198,10 +377,11 @@ export default function ProfilePage() {
       {/* Header Banner */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          {selectedAvatar ? (
+          {selectedAvatar && !avatarPreviewError ? (
             <img
               src={selectedAvatar}
               alt={fullName}
+              onError={() => setAvatarPreviewError(true)}
               className="w-16 h-16 rounded-full object-cover border-2 border-brand-500 shadow-sm"
             />
           ) : (
@@ -290,22 +470,105 @@ export default function ProfilePage() {
           )}
 
           <form onSubmit={handleProfileSubmit} className="space-y-4 text-xs">
-            {/* Avatar Selection */}
-            <div>
-              <label className="block font-semibold text-slate-700 mb-2">Select Profile Avatar</label>
-              <div className="flex items-center gap-3">
-                {AVATAR_OPTIONS.map((imgUrl, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setSelectedAvatar(imgUrl)}
-                    className={`relative w-12 h-12 rounded-full overflow-hidden border-2 transition-all cursor-pointer ${
-                      selectedAvatar === imgUrl ? 'border-brand-500 ring-2 ring-brand-300' : 'border-slate-200 hover:border-slate-400'
-                    }`}
-                  >
-                    <img src={imgUrl} alt="Avatar" className="w-full h-full object-cover" />
-                  </button>
-                ))}
+            {/* Avatar Upload & Selection */}
+            <div className="space-y-3">
+              <label className="block font-semibold text-slate-700">Profile Avatar</label>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  onChange={handleAvatarFileChange}
+                  disabled={avatarUploading || !isSupabaseConfigured || !user?.id}
+                  className="hidden"
+                  aria-label="Upload profile avatar image"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={avatarUploading || profileSaving || !isSupabaseConfigured || !user?.id}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold rounded-xl transition-colors cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {avatarUploading ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>
+                        {avatarStage === 'saving'
+                          ? 'Saving to profile...'
+                          : 'Uploading photo...'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={14} />
+                      <span>Upload Photo</span>
+                    </>
+                  )}
+                </button>
+
+                <span className="text-[11px] text-slate-500">
+                  {isSupabaseConfigured && user?.id
+                    ? 'JPEG, PNG, WEBP, or GIF up to 5 MB'
+                    : 'Sign in with a connected account to upload a custom photo'}
+                </span>
+              </div>
+
+              {avatarUploading && (
+                <div className="space-y-1.5" role="status" aria-live="polite">
+                  <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full bg-brand-500 transition-all duration-300 ${
+                        avatarStage === 'saving'
+                          ? 'w-5/6'
+                          : avatarStage === 'uploading'
+                          ? 'w-1/2'
+                          : 'w-1/4'
+                      }`}
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    {avatarStage === 'saving'
+                      ? 'Step 2/2: Updating profile record...'
+                      : 'Step 1/2: Uploading avatar image to secure storage...'}
+                  </p>
+                </div>
+              )}
+
+              {avatarSuccess && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xl flex items-center gap-2 animate-in fade-in">
+                  <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                  <span>Avatar uploaded and saved to your profile!</span>
+                </div>
+              )}
+
+              {avatarError && (
+                <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2 animate-in fade-in">
+                  <AlertCircle size={15} className="text-red-600 shrink-0" />
+                  <span>{avatarError}</span>
+                </div>
+              )}
+
+              <div className="pt-1">
+                <p className="text-[11px] font-medium text-slate-500 mb-2">Or choose a quick preset avatar:</p>
+                <div className="flex items-center gap-3">
+                  {AVATAR_OPTIONS.map((imgUrl, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        setSelectedAvatar(imgUrl)
+                        setAvatarPreviewError(false)
+                      }}
+                      className={`relative w-12 h-12 rounded-full overflow-hidden border-2 transition-all cursor-pointer ${
+                        selectedAvatar === imgUrl ? 'border-brand-500 ring-2 ring-brand-300' : 'border-slate-200 hover:border-slate-400'
+                      }`}
+                    >
+                      <img src={imgUrl} alt="Avatar preset" className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

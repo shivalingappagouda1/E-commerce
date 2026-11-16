@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, ArrowRight, Sparkles } from 'lucide-react'
+import { isSupabaseConfigured } from '../../lib/supabase'
 
 const DEFAULT_HERO_BANNERS = [
   {
@@ -36,15 +37,19 @@ const DEFAULT_HERO_BANNERS = [
 ]
 
 export default function HeroBanner({ banners = [] }) {
-  const displayBanners = banners && banners.length > 0 ? banners : DEFAULT_HERO_BANNERS
+  const displayBanners = banners && banners.length > 0
+    ? banners
+    : (!isSupabaseConfigured ? DEFAULT_HERO_BANNERS : [])
   const [current, setCurrent] = useState(0)
   const [paused, setPaused] = useState(false)
 
   const prev = useCallback(() => {
+    if (displayBanners.length === 0) return
     setCurrent(c => (c - 1 + displayBanners.length) % displayBanners.length)
   }, [displayBanners.length])
 
   const next = useCallback(() => {
+    if (displayBanners.length === 0) return
     setCurrent(c => (c + 1) % displayBanners.length)
   }, [displayBanners.length])
 
@@ -54,8 +59,18 @@ export default function HeroBanner({ banners = [] }) {
     return () => clearInterval(id)
   }, [next, paused, displayBanners.length])
 
-  const banner = displayBanners[current]
+  const safeCurrent = displayBanners.length > 0 ? current % displayBanners.length : 0
+  const banner = displayBanners[safeCurrent]
   if (!banner) return null
+
+  const bannerImage = banner.image || banner.image_url
+  const bannerCtaLink = banner.ctaLink || banner.cta_link || '/'
+  const bgFrom = banner.bg_from || banner.bgFrom
+  const bgTo = banner.bg_to || banner.bgTo
+  const bannerStyle = !banner.bgGradient && bgFrom && bgTo
+    ? { background: `linear-gradient(135deg, ${bgFrom} 0%, ${bgTo} 100%)` }
+    : undefined
+  const isExternalLink = /^https?:\/\//i.test(bannerCtaLink)
 
   return (
     <div
@@ -64,12 +79,15 @@ export default function HeroBanner({ banners = [] }) {
       onMouseLeave={() => setPaused(false)}
     >
       {/* Banner Slide */}
-      <div className={`relative w-full min-h-[320px] sm:min-h-[380px] md:min-h-[440px] bg-gradient-to-r ${banner.bgGradient || 'from-slate-950 to-brand-950'} flex items-center`}>
+      <div
+        className={`relative w-full min-h-[320px] sm:min-h-[380px] md:min-h-[440px] ${bannerStyle ? '' : `bg-gradient-to-r ${banner.bgGradient || 'from-slate-950 to-brand-950'}`} flex items-center`}
+        style={bannerStyle}
+      >
         {/* Background lifestyle image with subtle gradient overlay */}
-        {banner.image && (
+        {bannerImage && (
           <div className="absolute right-0 top-0 bottom-0 w-full sm:w-3/5 opacity-35 sm:opacity-50 overflow-hidden mix-blend-luminosity">
             <img
-              src={banner.image}
+              src={bannerImage}
               alt={banner.title}
               className="w-full h-full object-cover object-center transform scale-105 group-hover:scale-100 transition-transform duration-1000 ease-out"
             />
@@ -88,18 +106,32 @@ export default function HeroBanner({ banners = [] }) {
             {banner.title}
           </h1>
 
-          <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-md">
-            {banner.subtitle}
-          </p>
+          {banner.subtitle && (
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-md">
+              {banner.subtitle}
+            </p>
+          )}
 
           <div className="pt-2">
-            <Link
-              to={banner.ctaLink || '/'}
-              className="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs sm:text-sm px-6 py-3 rounded-xl shadow-lg hover:shadow-brand-500/30 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer active:scale-98"
-            >
-              <span>{banner.cta || 'Shop Now'}</span>
-              <ArrowRight size={16} />
-            </Link>
+            {isExternalLink ? (
+              <a
+                href={bannerCtaLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs sm:text-sm px-6 py-3 rounded-xl shadow-lg hover:shadow-brand-500/30 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer active:scale-98"
+              >
+                <span>{banner.cta || 'Shop Now'}</span>
+                <ArrowRight size={16} />
+              </a>
+            ) : (
+              <Link
+                to={bannerCtaLink}
+                className="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs sm:text-sm px-6 py-3 rounded-xl shadow-lg hover:shadow-brand-500/30 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer active:scale-98"
+              >
+                <span>{banner.cta || 'Shop Now'}</span>
+                <ArrowRight size={16} />
+              </Link>
+            )}
           </div>
         </div>
       </div>

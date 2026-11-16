@@ -14,12 +14,24 @@ const STANDARD_SHIPPING_FEE = 99
 
 export default function CartPage() {
   const navigate = useNavigate()
-  const { items, updateQty, removeItem, clearCart, totalPrice, originalTotalPrice, totalSavings, totalItems } = useCart()
+  const {
+    items,
+    updateQty,
+    removeItem,
+    clearCart,
+    totalPrice,
+    originalTotalPrice,
+    totalSavings,
+    totalItems,
+    appliedCoupon,
+    applyCoupon,
+    removeCoupon,
+    couponDiscount,
+  } = useCart()
   const { toggle: toggleWishlist, isWishlisted } = useWishlist()
 
   // Coupon state
   const [couponCode, setCouponCode] = useState('')
-  const [appliedCoupon, setAppliedCoupon] = useState(null)
   const [couponError, setCouponError] = useState('')
   const [couponSuccess, setCouponSuccess] = useState('')
 
@@ -27,16 +39,6 @@ export default function CartPage() {
   const amountToFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - totalPrice)
   const isFreeShipping = totalPrice >= FREE_SHIPPING_THRESHOLD
   const shippingFee = isFreeShipping || items.length === 0 ? 0 : STANDARD_SHIPPING_FEE
-
-  // Coupon calculation
-  let couponDiscount = 0
-  if (appliedCoupon) {
-    if (appliedCoupon.type === 'percent') {
-      couponDiscount = Math.round((totalPrice * appliedCoupon.value) / 100)
-    } else if (appliedCoupon.type === 'fixed') {
-      couponDiscount = Math.min(totalPrice, appliedCoupon.value)
-    }
-  }
 
   const finalTotal = Math.max(0, totalPrice - couponDiscount + shippingFee)
 
@@ -54,7 +56,7 @@ export default function CartPage() {
       return
     }
 
-    setAppliedCoupon(result.coupon)
+    applyCoupon(result.coupon)
     const discountText = result.coupon.type === 'percent'
       ? `${result.coupon.value}% discount added.`
       : `₹${result.coupon.value} discount added.`
@@ -62,7 +64,7 @@ export default function CartPage() {
   }
 
   function handleRemoveCoupon() {
-    setAppliedCoupon(null)
+    removeCoupon()
     setCouponCode('')
     setCouponSuccess('')
     setCouponError('')

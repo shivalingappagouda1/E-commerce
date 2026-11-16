@@ -7,11 +7,12 @@ import { useWishlist } from '../../context/WishlistContext'
 
 export default function ProductCard({ product }) {
   const { addItem, items, updateQty } = useCart()
-  const { toggle, isWishlisted } = useWishlist()
+  const { toggle, isWishlisted, isItemPending } = useWishlist()
 
   if (!product) return null
 
   const wishlisted = isWishlisted(product.id)
+  const wishPending = isItemPending(product.id)
   const cartItem = items.find(i => i.id === product.id || i.cartItemId === product.id)
   const inCart = Boolean(cartItem)
   const isAvailable = product.inStock !== false && product.is_active !== false
@@ -60,9 +61,13 @@ export default function ProductCard({ product }) {
           onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
-            toggle(product)
+            if (!wishPending) toggle(product)
           }}
-          className={`absolute top-2.5 right-2.5 p-2 rounded-full border shadow-xs transition-all z-20 cursor-pointer ${
+          disabled={wishPending}
+          aria-busy={wishPending}
+          className={`absolute top-2.5 right-2.5 p-2 rounded-full border shadow-xs transition-all z-20 ${
+            wishPending ? 'opacity-60 cursor-wait' : 'cursor-pointer'
+          } ${
             wishlisted
               ? 'bg-red-50 text-red-500 border-red-200 shadow-sm'
               : 'bg-white/90 backdrop-blur-2xs text-slate-400 border-slate-200 hover:text-red-500 hover:border-red-200 hover:bg-white'

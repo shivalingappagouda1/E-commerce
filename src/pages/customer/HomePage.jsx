@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Truck, ShieldCheck, RotateCcw, Lock, ArrowRight,
-  Flame, Clock, Sparkles, CheckCircle2
+  Flame, Clock, Sparkles, CheckCircle2, PackageOpen
 } from 'lucide-react'
 import HeroBanner from '../../components/layout/HeroBanner'
 import ProductGrid from '../../components/products/ProductGrid'
 import SectionHeading from '../../components/common/SectionHeading'
+import { isSupabaseConfigured } from '../../lib/supabase'
 import {
   fetchBanners,
   fetchFeaturedProducts,
@@ -87,8 +88,29 @@ function ValuePropsStrip() {
 }
 
 /** Modern Visual Categories Strip */
-function CategoryStrip({ categories }) {
-  const list = categories && categories.length > 0 ? categories : SAMPLE_CATEGORIES
+function CategoryStrip({ categories, loading = false }) {
+  const list = categories && categories.length > 0
+    ? categories
+    : (!isSupabaseConfigured ? SAMPLE_CATEGORIES : [])
+
+  if (list.length === 0) {
+    if (loading) {
+      return (
+        <section className="space-y-4">
+          <SectionHeading
+            title="Explore Top Categories"
+            subtitle="Discover millions of products across your favorite departments"
+          />
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 animate-pulse">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="h-24 bg-white rounded-2xl border border-slate-100 p-4" />
+            ))}
+          </div>
+        </section>
+      )
+    }
+    return null
+  }
 
   return (
     <section className="space-y-4">
@@ -103,8 +125,12 @@ function CategoryStrip({ categories }) {
             to={`/category/${cat.slug}`}
             className="group flex flex-col items-center gap-2.5 p-4 bg-white rounded-2xl border border-slate-200/80 hover:border-brand-300 hover:shadow-md transition-all text-center cursor-pointer"
           >
-            <div className="w-12 h-12 rounded-2xl bg-slate-50 group-hover:bg-brand-50 flex items-center justify-center text-2xl transition-colors group-hover:scale-110 duration-300">
-              {cat.icon || '🛍️'}
+            <div className="w-12 h-12 rounded-2xl bg-slate-50 group-hover:bg-brand-50 flex items-center justify-center overflow-hidden transition-colors group-hover:scale-110 duration-300">
+              {cat.image_url ? (
+                <img src={cat.image_url} alt={cat.name} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-2xl">{cat.icon || '🛍️'}</span>
+              )}
             </div>
             <span className="text-xs font-bold text-slate-700 group-hover:text-brand-600 transition-colors truncate max-w-full">
               {cat.name}
@@ -116,58 +142,41 @@ function CategoryStrip({ categories }) {
   )
 }
 
-/** Flash Deals Strip with Countdown */
-function FlashDealsStrip() {
+/** 30%+ Discounts Strip */
+function DealsStrip() {
   const [deals, setDeals] = useState([])
   const [loading, setLoading] = useState(true)
-  const [timeLeft, setTimeLeft] = useState({ hours: 7, minutes: 42, seconds: 18 })
 
   useEffect(() => {
-    fetchDeals().then(({ data }) => {
+    fetchDeals(6).then(({ data }) => {
       setDeals(data || [])
       setLoading(false)
     })
-
-    const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev.seconds > 0) return { ...prev, seconds: prev.seconds - 1 }
-        if (prev.minutes > 0) return { ...prev, minutes: 59, seconds: 59 }
-        if (prev.hours > 0) return { hours: prev.hours - 1, minutes: 59, seconds: 59 }
-        return { hours: 8, minutes: 0, seconds: 0 }
-      })
-    }, 1000)
-
-    return () => clearInterval(timer)
   }, [])
 
   if (!loading && (!deals || deals.length === 0)) return null
 
   return (
     <section className="bg-gradient-to-br from-amber-500/10 via-brand-500/5 to-white rounded-3xl border border-amber-200/80 p-6 space-y-6">
-      {/* Header with timer */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/60 pb-4">
         <div>
           <div className="flex items-center gap-2">
             <span className="p-1 bg-amber-500 text-white rounded-lg">
               <Flame size={18} />
             </span>
-            <h2 className="text-xl font-black text-slate-900">Deals of the Day</h2>
+            <h2 className="text-xl font-black text-slate-900">30%+ Discounts</h2>
           </div>
-          <p className="text-xs text-slate-500 mt-1">Limited-time flash discounts updated every 24 hours</p>
+          <p className="text-xs text-slate-500 mt-1">Products discounted by 30% or more off list price</p>
         </div>
 
-        {/* Live Timer */}
-        <div className="flex items-center gap-2 bg-white px-3.5 py-1.5 rounded-xl border border-amber-200 shadow-xs">
-          <Clock size={15} className="text-amber-600" />
-          <span className="text-xs font-semibold text-slate-600">Ends in:</span>
-          <div className="flex items-center gap-1 font-mono font-bold text-xs text-slate-900">
-            <span className="bg-slate-100 px-1.5 py-0.5 rounded">{String(timeLeft.hours).padStart(2, '0')}h</span>
-            <span>:</span>
-            <span className="bg-slate-100 px-1.5 py-0.5 rounded">{String(timeLeft.minutes).padStart(2, '0')}m</span>
-            <span>:</span>
-            <span className="bg-slate-100 px-1.5 py-0.5 rounded text-red-600">{String(timeLeft.seconds).padStart(2, '0')}s</span>
-          </div>
-        </div>
+        <Link
+          to="/deals"
+          className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-800 hover:text-amber-900 bg-amber-100 hover:bg-amber-200/80 px-3.5 py-2 rounded-xl transition-colors cursor-pointer self-start sm:self-auto"
+        >
+          <span>View All Discounts</span>
+          <ArrowRight size={14} />
+        </Link>
       </div>
 
       {/* Deals Grid */}
@@ -341,10 +350,13 @@ function NewsletterSection() {
 export default function HomePage() {
   const [banners, setBanners] = useState([])
   const [categories, setCategories] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetchBanners().then(({ data }) => setBanners(data || []))
-    fetchCategories().then(({ data }) => setCategories(data || []))
+    Promise.all([
+      fetchBanners().then(({ data }) => setBanners(data || [])),
+      fetchCategories().then(({ data }) => setCategories(data || [])),
+    ]).finally(() => setLoading(false))
   }, [])
 
   return (
@@ -355,16 +367,29 @@ export default function HomePage() {
       {/* 2. Value Propositions */}
       <ValuePropsStrip />
 
-      {/* 3. Category Discovery */}
-      <CategoryStrip categories={categories} />
+      {/* Empty State Banner when Supabase is configured but catalog has 0 records */}
+      {isSupabaseConfigured && !loading && categories.length === 0 && (
+        <div className="bg-white p-12 rounded-3xl border border-slate-200/80 text-center space-y-3">
+          <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mx-auto text-slate-400">
+            <PackageOpen size={32} />
+          </div>
+          <h3 className="text-base font-bold text-slate-800">Staging Catalog Is Currently Empty</h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            No categories or products have been published in this database yet. Run <code className="bg-slate-100 px-1.5 py-0.5 rounded text-brand-600 font-mono">database/seed_staging.sql</code> in your Supabase SQL Editor to populate the catalog with verified products and categories.
+          </p>
+        </div>
+      )}
 
-      {/* 4. Deals of the Day */}
-      <FlashDealsStrip />
+      {/* 3. Category Discovery */}
+      <CategoryStrip categories={categories} loading={loading} />
+
+      {/* 4. Deals (30%+ Discounts) */}
+      <DealsStrip />
 
       {/* 5. Featured Products */}
       <ProductSection
-        title="Featured Collections"
-        subtitle="Editorially handpicked products with exceptional quality & value"
+        title="Featured Products"
+        subtitle="Catalog items marked as featured"
         viewAllLink="/featured"
         loadFn={fetchFeaturedProducts}
       />
@@ -372,18 +397,18 @@ export default function HomePage() {
       {/* 6. Promotional Split Banners */}
       <PromoBanners />
 
-      {/* 7. Best Sellers */}
+      {/* 7. Top Rated & Reviewed */}
       <ProductSection
-        title="Best Selling Products"
-        subtitle="The highest-rated items ordered by thousands of customers"
+        title="Top Rated & Reviewed"
+        subtitle="Products with customer rating 4.5+ sorted by review count"
         viewAllLink="/best-sellers"
         loadFn={fetchBestSellers}
       />
 
-      {/* 8. Trending Now */}
+      {/* 8. Tagged Picks */}
       <ProductSection
-        title="Trending Right Now"
-        subtitle="Hot picks flying off the shelves this week"
+        title="Tagged Picks"
+        subtitle="Products tagged with Trending, Hot, or Top Deal badges"
         viewAllLink="/trending"
         loadFn={fetchTrendingProducts}
       />

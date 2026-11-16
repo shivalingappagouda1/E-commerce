@@ -8,6 +8,7 @@ import {
 import { useCart } from '../../context/CartContext'
 import { useWishlist } from '../../context/WishlistContext'
 import { useAuth } from '../../context/AuthContext'
+import { isSupabaseConfigured } from '../../lib/supabase'
 import { fetchProducts, fetchCategories } from '../../services/productService'
 import { SAMPLE_CATEGORIES } from '../../utils/sampleData'
 import { formatPrice } from '../../utils/format'
@@ -22,8 +23,9 @@ export default function Navbar() {
   const [userOpen, setUserOpen] = useState(false)
   const [suggestions, setSuggestions] = useState([])
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const [categories, setCategories] = useState(SAMPLE_CATEGORIES)
+  const [categories, setCategories] = useState(() => isSupabaseConfigured ? [] : SAMPLE_CATEGORIES)
   const [allProducts, setAllProducts] = useState([])
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState(null)
 
   const searchRef = useRef(null)
   const navigate = useNavigate()
@@ -31,7 +33,7 @@ export default function Navbar() {
   // Load categories and products for instant search
   useEffect(() => {
     fetchCategories().then(({ data }) => {
-      if (data && data.length > 0) setCategories(data)
+      if (data) setCategories(data)
     })
     fetchProducts().then(({ data }) => {
       setAllProducts(data || [])
@@ -181,8 +183,17 @@ export default function Navbar() {
               onClick={() => setUserOpen(o => !o)}
               className="flex items-center gap-2 text-white hover:bg-white/15 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer"
             >
-              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center">
-                <User size={15} />
+              <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center overflow-hidden">
+                {profile?.avatar_url && failedAvatarUrl !== profile.avatar_url ? (
+                  <img
+                    src={profile.avatar_url}
+                    alt={displayName}
+                    className="w-full h-full object-cover"
+                    onError={() => setFailedAvatarUrl(profile.avatar_url)}
+                  />
+                ) : (
+                  <User size={15} />
+                )}
               </div>
               <div className="text-left hidden md:block max-w-[110px]">
                 <span className="block text-[10px] text-brand-100 font-normal leading-tight">Hello,</span>

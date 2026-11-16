@@ -12,7 +12,7 @@ import { createClient } from '@supabase/supabase-js'
  * users can access. Never put the service-role key in frontend code.
  */
 const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL
-const supabaseKey = import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY
+const supabaseKey = import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env?.VITE_SUPABASE_ANON_KEY
 
 /** Whether both env vars are present (does NOT mean the connection works). */
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
@@ -34,14 +34,17 @@ export const supabase = isSupabaseConfigured
   : null
 
 /**
- * Lightweight connection check.
- * Resolves to { ok: true } if the Supabase project responds,
- * or { ok: false, message } on failure.
+ * Genuine network connectivity check.
+ * Sends a lightweight GET request to the Supabase REST endpoint to verify
+ * that the server is reachable and accepting requests with the configured API key.
  *
- * Safe to call from the UI — never leaks credentials or sensitive data.
+ * Resolves to { ok: true, message } if the Supabase project responds successfully,
+ * or { ok: false, message } on failure or timeout.
+ *
+ * Safe to call from the UI — never leaks credentials or sensitive data in errors.
  */
 export async function checkSupabaseConnection() {
-  if (!supabase) {
+  if (!supabase || !supabaseUrl || !supabaseKey) {
     return {
       ok: false,
       message: 'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in .env.local.',
@@ -49,14 +52,43 @@ export async function checkSupabaseConnection() {
   }
 
   try {
-    // A trivial query that works even before any tables exist.
-    // auth.getSession() is a safe no-op that confirms the endpoint is reachable.
-    const { error } = await supabase.auth.getSession()
-    if (error) {
-      return { ok: false, message: `Supabase responded with an error: ${error.message}` }
+    const baseUrl = supabaseUrl.replace(/\/+$/, '')
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 6000) : null
+
+    // Perform an actual HTTP network call to the Supabase REST endpoint
+    const response = await fetch(`${baseUrl}/rest/v1/`, {
+      method: 'GET',
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+      },
+      signal: controller ? controller.signal : undefined,
+    })
+
+    if (timeoutId) clearTimeout(timeoutId)
+
+    if (response.ok) {
+      return { ok: true, message: 'Connected to Supabase successfully.' }
     }
-    return { ok: true, message: 'Connected to Supabase successfully.' }
+
+    // Handle non-success HTTP status codes (e.g. 401 Unauthorized, 403 Forbidden, 500, etc.)
+    return {
+      ok: false,
+      message: `Supabase server responded with status ${response.status} (${response.statusText || 'Request failed'}).`,
+    }
   } catch (err) {
-    return { ok: false, message: `Could not reach Supabase: ${err.message}` }
+    if (err?.name === 'AbortError') {
+      return {
+        ok: false,
+        message: 'Connection to Supabase timed out after 6 seconds.',
+      }
+    }
+    // Return sanitized error without exposing API keys or credentials
+    const cleanErrorMsg = err?.message ? String(err.message).replace(supabaseKey, '***') : 'Network request failed'
+    return {
+      ok: false,
+      message: `Could not reach Supabase server: ${cleanErrorMsg}`,
+    }
   }
 }

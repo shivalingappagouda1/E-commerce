@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Decode QR</title></head>
+<body>
+<img id="qr" src="../public/phonepe-qr.png" />
+<pre id="output">Decoding...</pre>
+<script>
+window.addEventListener('load', async () => {
+  const output = document.getElementById('output');
+  try {
+    const img = document.getElementById('qr');
+    if ('BarcodeDetector' in window) {
+      const detector = new BarcodeDetector({ formats: ['qr_code'] });
+      const codes = await detector.detect(img);
+      if (codes.length > 0) {
+        output.textContent = JSON.stringify(codes[0].rawValue);
+      } else {
+        output.textContent = 'NO_CODES_DETECTED';
+      }
+    } else {
+      output.textContent = 'NO_BARCODE_DETECTOR_API';
+    }
+  } catch (e) {
+    output.textContent = 'ERROR: ' + e.message;
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,674 @@
+<USER_REQUEST>
+# ShopKart Phase 6C — V4 Final Safety & Test Integrity Corrections
+
+## Project context
+
+Continue from:
+
+`ShopKart_Phase6C_Final_Verification_Source_v3.zip`
+
+The v3 source review identified two remaining corrections:
+
+1. The real PostgreSQL concurrency runner does not verify that `shopkart_test` is empty before executing the schema and migration.
+2. The PGlite runner does not enforce the expected 182-test count or verify that every test result is actually PASS.
+
+This task is limited to those two corrections, their documentation, and verification.
+
+Do not reopen or unnecessarily rewrite the already-corrected Phase 6 business logic.
+
+---
+
+# 1. STRICT RESTRICTIONS
+
+These restrictions are mandatory.
+
+- Do NOT connect to Supabase.
+- Do NOT execute SQL against Supabase or any remote database.
+- Do NOT apply the Phase 6C migration remotely.
+- Do NOT execute the rollback script.
+- Do NOT modify `.env`, credentials, API keys, or environment secrets.
+- Do NOT deploy anything.
+- Do NOT start Phase 7 or Phase 8.
+- Do NOT delete, truncate, reset, or overwrite existing user data.
+- Do NOT automatically drop or recreate a database.
+- Do NOT bypass RLS, authorization, or security restrictions.
+- Do NOT change payment, shipping, cancellation, refund, inventory, UTR, COD, or physical-return business rules.
+- Do NOT weaken the existing DNS loopback validation.
+- Do NOT reintroduce global dependency fallbacks.
+- Do NOT remove the deterministic H2 concurrency barrier.
+
+Only make the explicitly requested corrections.
+
+If a further database or business-logic change appears necessary, stop and report it before implementing it.
+
+---
+
+# 2. FILE 1 — `scratch/test_true_concurrent_connections.mjs`
+
+## Problem
+
+The v3 runner validates that:
+
+- `PG_CONNECTION_STRING` exists.
+- The database name is exactly `shopkart_test`.
+- The host resolves exclusively to loopback addresses.
+- Remote hosts and host overrides are rejected.
+
+However, after connecting, the runner immediately executes:
+
+```javascript
+await client1.query(schemaSql);
+await client1.query(migrationSql);
+```
+
+This is unsafe if `shopkart_test` already contains application tables, functions, or data from an earlier test.
+
+A database name alone does not prove that the database is empty.
+
+## Required correction: Add an empty-database preflight
+
+The runner must perform a read-only catalog inspection immediately after establishing the first connection and before executing any schema or migration SQL.
+
+### A. Add this function
+
+Implement the following function in:
+
+`scratch/test_true_concurrent_connections.mjs`
+
+```javascript
+async function assertDatabaseIsClean(client) {
+  const result = await client.query(`
+    SELECT
+      current_database() AS database_name,
+
+      (
+        SELECT COUNT(*)
+        FROM pg_namespace
+        WHERE nspname NOT IN (
+          'pg_catalog',
+          'information_schema',
+          'public'
+        )
+        AND nspname NOT LIKE 'pg_toast%'
+        AND nspname NOT LIKE 'pg_temp_%'
+        AND nspname NOT LIKE 'pg_toast_temp_%'
+      ) AS custom_schema_count,
+
+      (
+        SELECT COUNT(*)
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind IN (
+            'r',
+            'p',
+            'v',
+            'm',
+            'S',
+            'f'
+          )
+      ) AS public_relation_count,
+
+      (
+        SELECT COUNT(*)
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public'
+      ) AS public_routine_count,
+
+      (
+        SELECT COUNT(*)
+        FROM pg_type t
+        JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE n.nspname = 'public'
+          AND t.typtype IN ('e', 'c', 'd', 'r')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM pg_class c
+            WHERE c.reltype = t.oid
+          )
+      ) AS public_custom_type_count
+  `);
+
+  const state = result.rows[0];
+
+  console.log('Database preflight:');
+  console.log(`  Database: ${state.database_name}`);
+  console.log(`  Custom schemas: ${state.custom_schema_count}`);
+  console.log(`  Public relations: ${state.public_relation_count}`);
+  console.log(`  Public routines: ${state.public_routine_count}`);
+  console.log(`  Public custom types: ${state.public_custom_type_count}`);
+
+  const clean =
+    state.database_name === 'shopkart_test' &&
+    Number(state.custom_schema_count) === 0 &&
+    Number(state.public_relation_count) === 0 &&
+    Number(state.public_routine_count) === 0 &&
+    Number(state.public_custom_type_count) === 0;
+
+  if (!clean) {
+    throw new Error(
+      'DATABASE SAFETY GATE FAILED: shopkart_test is not empty. ' +
+      'No schema or migration SQL was executed. ' +
+      'Use a newly created, dedicated local test database.'
+    );
+  }
+
+  console.log('✔ Empty database preflight passed.');
+}
+```
+
+You may adjust the catalog query if the existing baseline schema requires a more precise empty-database check. However, the following requirements are mandatory:
+
+- The check must be read-only.
+- It must inspect existing user-created objects.
+- It must detect existing application tables, views, materialized views, sequences, foreign tables, routines, and custom types.
+- It must reject unexpected user-created schemas.
+- It must not treat PostgreSQL system catalogs as application objects.
+- It must not automatically remove any object.
+
+If you find an issue with the custom-type query, correct it so it detects standalone custom types without incorrectly counting automatically generated table row types.
+
+### B. Call the preflight before schema execution
+
+Find the current section that performs:
+
+```javascript
+await client1.query(schemaSql);
+await client1.query(migrationSql);
+```
+
+Change its execution order to:
+
+```javascript
+await assertDatabaseIsClean(client1);
+
+console.log('Loading baseline schema...');
+await client1.query(schemaSql);
+
+console.log('Applying Phase 6C migration to isolated local test database...');
+await client1.query(migrationSql);
+```
+
+The empty-database check must occur before either file is executed.
+
+### C. Add an immediate-abort behavior
+
+If the preflight fails:
+
+- Do not execute `schema.sql`.
+- Do not execute the migration.
+- Do not execute any test fixtures.
+- Do not delete existing objects.
+- Do not attempt to repair or reset the database.
+- Print the reason.
+- Exit with a nonzero exit code.
+
+Ensure the existing `finally` cleanup still closes every client.
+
+### D. Apply the preflight only once
+
+The runner should perform the empty-database check once, before initializing the test database.
+
+Do not run the empty-database check again after the schema and migration have been loaded.
+
+The later concurrency tests must use the initialized database normally.
+
+### E. Preserve the existing connection safety gate
+
+Do not change the v3 protections:
+
+- Mandatory `PG_CONNECTION_STRING`.
+- Exact database name `shopkart_test`.
+- DNS-based loopback verification.
+- Rejection of remote addresses.
+- Rejection of host overrides.
+- No global dependency fallbacks.
+- No credentials in console logs.
+
+Do not introduce a default connection string.
+
+---
+
+# 3. FILE 2 — `scratch/test_pglite_runner.mjs`
+
+## Problem
+
+The v3 PGlite runner reports the number of successful assertions it observes, but does not enforce the expected count.
+
+If an assertion disappears or stops executing, the runner could potentially report a smaller number of tests as successful.
+
+We require exactly 182 expected assertions for this version of the Phase 6C suite.
+
+## Required correction
+
+### A. Define the expected test count
+
+Near the top of:
+
+`scratch/test_pglite_runner.mjs`
+
+Add:
+
+```javascript
+const EXPECTED_TEST_COUNT = 182;
+```
+
+Do not calculate the expected count dynamically from the number of tests that happen to execute.
+
+It must remain an explicit expected value.
+
+### B. Validate every result
+
+Inspect the current test logging and assertion mechanism.
+
+The runner must collect the actual result of every assertion.
+
+For example, if the runner uses a results array, the validation logic should follow this structure:
+
+```javascript
+function validateTestResults(results) {
+  const total = results.length;
+
+  const passed = results.filter(
+    result => result.status === 'PASS'
+  ).length;
+
+  const failed = results.filter(
+    result => result.status === 'FAIL'
+  ).length;
+
+  const skipped = results.filter(
+    result => result.status === 'SKIP'
+  ).length;
+
+  const invalid = results.filter(
+    result => !['PASS', 'FAIL', 'SKIP'].includes(result.status)
+  ).length;
+
+  console.log('\nPhase 6C PGlite Test Summary');
+  console.log('----------------------------');
+  console.log(`Expected: ${EXPECTED_TEST_COUNT}`);
+  console.log(`Executed: ${total}`);
+  console.log(`Passed: ${passed}`);
+  console.log(`Failed: ${failed}`);
+  console.log(`Skipped: ${skipped}`);
+  console.log(`Invalid statuses: ${invalid}`);
+
+  const countMatches = total === EXPECTED_TEST_COUNT;
+
+  const allPassed =
+    passed === EXPECTED_TEST_COUNT &&
+    failed === 0 &&
+    skipped === 0 &&
+    invalid === 0;
+
+  if (!countMatches || !allPassed) {
+    throw new Error(
+      'PGLITE TEST SUITE FAILED: expected exactly 182 passing tests, ' +
+      'with zero failures, skips, or invalid statuses.'
+    );
+  }
+
+  console.log('✔ All 182 expected PGlite tests passed.');
+}
+```
+
+Adapt this to the actual result structure in the existing runner.
+
+Do not introduce a second test framework unnecessarily.
+
+### C. Make missing assertions fail
+
+The following conditions must fail the runner:
+
+- Fewer than 182 assertions execute.
+- More than 182 assertions execute unexpectedly.
+- Any assertion fails.
+- Any assertion is skipped.
+- An assertion produces an unknown or invalid status.
+- The test execution stops before the full suite finishes.
+- A SQL test file is missing.
+- A required test category is not executed.
+
+Do not count skipped tests as passed.
+
+Do not create artificial PASS entries to reach 182.
+
+### D. Preserve the existing category breakdown
+
+The current expected categories and counts are:
+
+| Category | Expected |
+|---|---:|
+| Schema | 5 |
+| Security | 31 |
+| Privileges | 34 |
+| RLS Enforcement | 7 |
+| Inventory | 5 |
+| Checkout | 2 |
+| Shipping | 1 |
+| Payment | 3 |
+| Idempotency | 10 |
+| UTR Submission | 4 |
+| Authorization | 4 |
+| Admin Verification | 7 |
+| PhonePe Lifecycle | 2 |
+| UTR Resubmission | 2 |
+| PhonePe Expiry | 7 |
+| Cancellation | 6 |
+| Order Lifecycle | 4 |
+| Refunds | 17 |
+| Shipping Matrix | 4 |
+| COD Collection | 3 |
+| Physical Returns | 18 |
+| Constraints | 6 |
+| **Total** | **182** |
+
+Ensure the runner verifies the actual executed count in each category as well as the total.
+
+If the current test harness does not expose category information directly, add category labels to the existing assertion mechanism rather than guessing categories from test IDs.
+
+Do not change test assertions or their expected behavior merely to make the count pass.
+
+### E. Ensure a real process failure
+
+The runner must exit with a nonzero process exit code if the validation fails.
+
+Use a top-level error handler or equivalent.
+
+For example:
+
+```javascript
+main().catch(error => {
+  console.error('\nPGLITE TEST SUITE FAILED');
+  console.error(error.message);
+  process.exitCode = 1;
+});
+```
+
+Adapt this to the current runner's entry point.
+
+Do not use `.catch(console.error)` if it allows the process to finish with exit code zero.
+
+---
+
+# 4. FILE 3 — `README_PHASE6C_VERIFICATION.md`
+
+Update the documentation with the new database preflight and assertion-count checks.
+
+Add a section:
+
+## Database safety preflight
+
+Document:
+
+- The concurrency test uses only a local PostgreSQL database.
+- The required database name is exactly `shopkart_test`.
+- The host must resolve exclusively to loopback addresses.
+- The database must be empty before the runner initializes it.
+- The runner performs a read-only catalog inspection first.
+- Existing user tables, routines, custom types, or schemas cause the runner to abort.
+- The runner never drops, truncates, or resets existing database objects.
+- The developer must manually create a fresh dedicated local test database.
+- The runner executes the baseline schema and migration only after the preflight succeeds.
+
+Add a section:
+
+## PGlite test integrity
+
+Document:
+
+- Expected assertion count: 182.
+- All 182 must execute.
+- All 182 must pass.
+- Zero skipped tests are permitted.
+- Missing or unexpected test counts cause a nonzero exit code.
+- Category counts are checked separately.
+- PGlite is not a replacement for independent-session PostgreSQL concurrency testing.
+
+Keep the existing setup commands and security documentation.
+
+---
+
+# 5. FILE 4 — `phase6c_final_corrections_dossier.md`
+
+Update the verification dossier for v4.
+
+Include:
+
+1. The new empty-database preflight.
+2. Exact PostgreSQL catalog checks performed.
+3. Confirmation that preflight occurs before schema and migration execution.
+4. Confirmation that no automatic reset, truncate, or drop is performed.
+5. Expected PGlite count of 182.
+6. Actual executed count.
+7. Actual passed, failed, skipped, and invalid counts.
+8. Actual category-by-category counts.
+9. Whether the real PostgreSQL suite was executed.
+10. Whether H2 was executed.
+11. The Windows Oxlint application-control block, if still present.
+12. The exact files modified.
+13. Confirmation that Supabase was never accessed or modified.
+
+Clearly distinguish between:
+
+- Implemented.
+- Executed and passed.
+- Executed and failed.
+- Not executed.
+
+Never describe a test as passed merely because its implementation exists.
+
+---
+
+# 6. FILES THAT MUST NOT BE MODIFIED WITHOUT A DISCOVERED DEFECT
+
+Do not modify these files as part of this task unless a direct dependency of the requested corrections requires it:
+
+- `database/migrations/phase6c_order_and_checkout_corrections.sql`
+- `database/migrations/phase6c_rollback.sql`
+- `database/tests/phase6c_sql_tests.sql`
+- `src/pages/customer/CheckoutPage.jsx`
+- `src/services/adminService.js`
+
+The physical-return lock hierarchy and business logic have already undergone review.
+
+Do not rewrite them just to make the task appear larger.
+
+If a real defect is found, document the exact code and stop for review before changing business logic.
+
+---
+
+# 7. REQUIRED TEST EXECUTION
+
+## Test A — PGlite
+
+Execute:
+
+```bash
+npm run test:phase6c:pglite
+```
+
+Expected:
+
+```text
+Expected: 182
+Executed: 182
+Passed: 182
+Failed: 0
+Skipped: 0
+Invalid statuses: 0
+
+PGLITE TESTS: PASS
+```
+
+This is the expected success format, not permission to fabricate results.
+
+If the actual result differs, report the actual numbers and mark the test FAIL.
+
+## Test B — Real PostgreSQL concurrency
+
+Execute:
+
+```bash
+npm run test:phase6c:concurrency
+```
+
+The runner must first pass:
+
+1. Mandatory connection string check.
+2. URL validation.
+3. Database-name validation.
+4. Loopback DNS validation.
+5. Empty-database preflight.
+
+Only then may it execute the baseline schema and migration locally.
+
+If the database is not empty, report:
+
+```text
+DATABASE PREFLIGHT: FAIL
+REAL POSTGRESQL CONCURRENCY: NOT EXECUTED
+```
+
+Do not attempt to clean the database automatically.
+
+If PostgreSQL is unavailable, report:
+
+```text
+REAL POSTGRESQL CONCURRENCY: NOT EXECUTED
+```
+
+Do not claim concurrency tests passed.
+
+If the suite runs, report A, B, C, D, E, F, G, H, and H2 individually.
+
+H2 must still prove that:
+
+- Client 1 holds the order lock.
+- Client 2 waits.
+- `pg_blocking_pids()` observes the blocking relationship.
+- Client 1 commits.
+- Client 2 resumes and completes.
+- Inventory changes by exactly the approved quantity.
+- Duplicate completion cannot restore inventory twice.
+
+## Test C — Frontend build
+
+Run:
+
+```bash
+npm run build
+```
+
+Report the actual result.
+
+## Test D — Frontend lint
+
+Run:
+
+```bash
+npm run lint
+```
+
+If Windows Application Control blocks:
+
+`oxlint.win32-x64-msvc.node`
+
+report:
+
+```text
+FRONTEND LINT: BLOCKED BY WINDOWS APPLICATION CONTROL
+```
+
+Do not disable Windows Security, bypass application-control policies, or replace the lint result with a build result.
+
+---
+
+# 8. FINAL ZIP
+
+Create:
+
+`ShopKart_Phase6C_Final_Verification_Source_v4.zip`
+
+Preserve the repository folder structure.
+
+Include:
+
+- `database/schema.sql`
+- `database/migrations/phase6c_order_and_checkout_corrections.sql`
+- `database/migrations/phase6c_rollback.sql`
+- `database/tests/phase6c_sql_tests.sql`
+- `src/pages/customer/CheckoutPage.jsx`
+- `src/services/adminService.js`
+- `scratch/test_pglite_runner.mjs`
+- `scratch/test_true_concurrent_connections.mjs`
+- `package.json`
+- `README_PHASE6C_VERIFICATION.md`
+- `phase6c_final_corrections_dossier.md`
+
+Do not include:
+
+- `.env`
+- API keys
+- passwords
+- access tokens
+- `node_modules`
+- unrelated build output
+- personal files
+
+---
+
+# 9. FINAL REPORT FORMAT
+
+Return:
+
+1. Summary of corrections.
+2. Exact file-by-file change log.
+3. The complete database preflight implementation.
+4. Explanation of how the preflight prevents modification of a non-empty database.
+5. The PGlite assertion-count implementation.
+6. Actual PGlite results and category breakdown.
+7. Real PostgreSQL results.
+8. H2 results.
+9. Frontend build results.
+10. Frontend lint results.
+11. Remaining limitations.
+12. ZIP location and exact file size.
+
+Use these exact final status labels:
+
+`CODE CORRECTIONS: COMPLETE / INCOMPLETE`
+
+`DATABASE PREFLIGHT: PASS / FAIL / NOT EXECUTED`
+
+`PGLITE TESTS: PASS / FAIL / NOT EXECUTED`
+
+`REAL POSTGRESQL CONCURRENCY: PASS / FAIL / NOT EXECUTED`
+
+`H2 DETERMINISTIC LOCK TEST: PASS / FAIL / NOT EXECUTED`
+
+`FRONTEND BUILD: PASS / FAIL / NOT EXECUTED`
+
+`FRONTEND LINT: PASS / FAIL / BLOCKED BY WINDOWS APPLICATION CONTROL / NOT EXECUTED`
+
+`SUPABASE MIGRATION: NOT APPLIED`
+
+`PHASE 6C: NOT APPROVED — AWAITING INDEPENDENT SOURCE REVIEW`
+
+Even if all local tests pass, do not approve Phase 6C. Return the complete v4 ZIP for independent source review.
+
+No Phase 7 or Phase 8 work is authorized.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-11-15T00:41:00+05:30.
+
+The user's current state is as follows:
+Other open documents:
+- c:\Users\shiva\OneDrive\Documents\3)projects\E-Commerece\database\migrations\phase6c_order_and_checkout_corrections.sql (LANGUAGE_UNSPECIFIED)
+- c:\Users\shiva\OneDrive\Documents\3)projects\E-Commerece\scratch\test_pglite_runner.mjs (LANGUAGE_UNSPECIFIED)
+- c:\Users\shiva\OneDrive\Documents\3)projects\E-Commerece\database\tests\phase6c_sql_tests.sql (LANGUAGE_UNSPECIFIED)
+- c:\Users\shiva\OneDrive\Documents\3)projects\E-Commerece\src\services\adminService.js (LANGUAGE_UNSPECIFIED)
+- c:\Users\shiva\OneDrive\Documents\3)projects\E-Commerece\src\pages\customer\CheckoutPage.jsx (LANGUAGE_UNSPECIFIED)
+</ADDITIONAL_METADATA>

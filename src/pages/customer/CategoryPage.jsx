@@ -1,13 +1,51 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useLocation } from 'react-router-dom'
 import {
   Filter, SlidersHorizontal, ChevronRight, AlertCircle,
-  X, Star, Check, Grid, List, RotateCcw
+  X, Star, Check, Grid, List, RotateCcw, Sparkles
 } from 'lucide-react'
-import { fetchProducts, fetchCategories } from '../../services/productService'
+import {
+  fetchProducts,
+  fetchCategories,
+  fetchFeaturedProducts,
+  fetchBestSellers,
+  fetchTrendingProducts,
+  fetchDeals
+} from '../../services/productService'
 import { SAMPLE_CATEGORIES } from '../../utils/sampleData'
 import ProductCard from '../../components/products/ProductCard'
 import { formatPrice } from '../../utils/format'
+
+export const CURATED_FEEDS = {
+  featured: {
+    key: 'featured',
+    title: 'Featured Products',
+    subtitle: 'Catalog items highlighted as featured',
+    icon: '✨',
+    loadFn: () => fetchFeaturedProducts(),
+  },
+  'best-sellers': {
+    key: 'best-sellers',
+    title: 'Top Rated & Reviewed',
+    subtitle: 'Products with customer rating 4.5+ sorted by review count',
+    icon: '⭐',
+    loadFn: () => fetchBestSellers(),
+  },
+  trending: {
+    key: 'trending',
+    title: 'Tagged Picks',
+    subtitle: 'Products tagged with promotional badges (Trending, Hot, Top Deal)',
+    icon: '🏷️',
+    loadFn: () => fetchTrendingProducts(),
+  },
+  deals: {
+    key: 'deals',
+    title: '30%+ Discounts',
+    subtitle: 'Products discounted by 30% or more off list price',
+    icon: '🏷️',
+    loadFn: () => fetchDeals(),
+  },
+}
 
 const PRICE_PRESETS = [
   { label: 'All Prices', min: 0, max: 200000 },
@@ -17,15 +55,35 @@ const PRICE_PRESETS = [
   { label: 'Above ₹25,000', min: 25000, max: 200000 },
 ]
 
-export default function CategoryPage() {
+export default function CategoryPage({ feed }) {
   const { slug } = useParams()
+  const location = useLocation()
+
+  // Detect whether the current route was intended as a curated feed
+  const isFeedRoute = Boolean(
+    feed ||
+    location.pathname === '/featured' ||
+    location.pathname === '/best-sellers' ||
+    location.pathname === '/trending' ||
+    location.pathname === '/deals'
+  )
+
+  const detectedFeedKey = feed || (
+    location.pathname === '/featured' ? 'featured' :
+    location.pathname === '/best-sellers' ? 'best-sellers' :
+    location.pathname === '/trending' ? 'trending' :
+    location.pathname === '/deals' ? 'deals' : null
+  )
+
+  const activeFeed = detectedFeedKey ? CURATED_FEEDS[detectedFeedKey] : null
+  const isInvalidFeed = isFeedRoute && !activeFeed
 
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState(SAMPLE_CATEGORIES)
   const [loading, setLoading] = useState(true)
 
   // Filters state
-  const [selectedCategory, setSelectedCategory] = useState(slug || 'all')
+  const [selectedCategory, setSelectedCategory] = useState(activeFeed ? 'all' : (slug || 'all'))
   const [priceMax, setPriceMax] = useState(200000)
   const [minRating, setMinRating] = useState(0)
   const [inStockOnly, setInStockOnly] = useState(false)
@@ -33,20 +91,28 @@ export default function CategoryPage() {
   const [viewMode, setViewMode] = useState('grid') // 'grid' | 'list'
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false)
 
-  // Sync selectedCategory when URL slug changes
+  // Sync selectedCategory when URL slug changes (for standard category views)
   useEffect(() => {
-    setSelectedCategory(slug || 'all')
-  }, [slug])
+    if (!activeFeed) {
+      setSelectedCategory(slug || 'all')
+    } else {
+      setSelectedCategory('all')
+    }
+  }, [slug, activeFeed])
 
-  // Load products and categories
+  // Load products and categories based on active feed or general catalog
+  // Guards against silently dumping the entire catalog when an invalid feed slug is provided
   useEffect(() => {
     setLoading(true)
-    Promise.all([fetchProducts(), fetchCategories()]).then(([prodRes, catRes]) => {
-      setProducts(prodRes.data || [])
-      if (catRes.data && catRes.data.length > 0) setCategories(catRes.data)
+
+    const loadProductsPromise = activeFeed ? activeFeed.loadFn() : (isInvalidFeed ? Promise.resolve({ data: [] }) : fetchProducts())
+
+    Promise.all([loadProductsPromise, fetchCategories()]).then(([prodRes, catRes]) => {
+      setProducts(prodRes?.data || [])
+      if (catRes?.data && catRes.data.length > 0) setCategories(catRes.data)
       setLoading(false)
     })
-  }, [])
+  }, [detectedFeedKey, slug, isInvalidFeed])
 
   // Find category metadata
   const currentCategoryObj = categories.find(c => c.slug === selectedCategory)
@@ -105,24 +171,52 @@ export default function CategoryPage() {
       <nav className="flex items-center gap-2 text-xs text-slate-500">
         <Link to="/" className="hover:text-brand-600 transition-colors">Home</Link>
         <ChevronRight size={14} />
-        <span className="text-slate-400">Categories</span>
-        <ChevronRight size={14} />
-        <span className="text-slate-900 font-bold capitalize">
-          {currentCategoryObj ? currentCategoryObj.name : selectedCategory}
-        </span>
+        {isInvalidFeed ? (
+          <>
+            <span className="text-slate-400">Curated Collections</span>
+            <ChevronRight size={14} />
+            <span className="text-slate-900 font-bold">Collection Not Found</span>
+          </>
+        ) : activeFeed ? (
+          <>
+            <span className="text-slate-400">Curated Collections</span>
+            <ChevronRight size={14} />
+            <span className="text-slate-900 font-bold">{activeFeed.title}</span>
+          </>
+        ) : (
+          <>
+            <span className="text-slate-400">Categories</span>
+            <ChevronRight size={14} />
+            <span className="text-slate-900 font-bold capitalize">
+              {currentCategoryObj ? currentCategoryObj.name : selectedCategory}
+            </span>
+          </>
+        )}
       </nav>
 
       {/* Header Banner */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2.5">
-            <span className="text-2xl">{currentCategoryObj?.icon || '🛍️'}</span>
+            <span className="text-2xl">{isInvalidFeed ? '⚠️' : activeFeed ? activeFeed.icon : (currentCategoryObj?.icon || '🛍️')}</span>
             <h1 className="text-2xl font-black text-slate-900">
-              {currentCategoryObj ? currentCategoryObj.name : 'All Products'}
+              {isInvalidFeed
+                ? 'Curated Collection Not Found'
+                : activeFeed
+                ? activeFeed.title
+                : (currentCategoryObj ? currentCategoryObj.name : 'All Products')}
             </h1>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Showing <strong className="text-slate-800">{filteredProducts.length}</strong> items available in catalog
+            {isInvalidFeed ? (
+              <span className="text-red-600 font-semibold">The requested curated collection was not recognized.</span>
+            ) : activeFeed ? (
+              <span className="text-slate-500">
+                {activeFeed.subtitle} • <strong className="text-slate-800">{filteredProducts.length}</strong> items found
+              </span>
+            ) : (
+              <>Showing <strong className="text-slate-800">{filteredProducts.length}</strong> items available in catalog</>
+            )}
           </p>
         </div>
 
@@ -347,17 +441,39 @@ export default function CategoryPage() {
             <div className="bg-white p-12 rounded-3xl border border-slate-200/80 text-center space-y-4">
               <AlertCircle size={48} className="text-slate-300 mx-auto" />
               <div>
-                <h3 className="text-lg font-bold text-slate-800">No matching products found</h3>
+                <h3 className="text-lg font-bold text-slate-800">
+                  {isInvalidFeed
+                    ? 'Curated Collection Not Found'
+                    : activeFeed
+                    ? `No products found in ${activeFeed.title}`
+                    : 'No matching products found'}
+                </h3>
                 <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                  Try relaxing your price slider, rating filter, or search across another department.
+                  {isInvalidFeed
+                    ? 'The curated feed you requested is not recognized. Browse our complete catalog below.'
+                    : hasActiveFilters
+                    ? 'Try relaxing your price slider, rating filter, or search across another department.'
+                    : activeFeed
+                    ? 'Check back later for newly curated items or browse our full catalog.'
+                    : 'Try relaxing your price slider, rating filter, or search across another department.'}
                 </p>
               </div>
-              <button
-                onClick={resetFilters}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-500 text-white font-bold text-xs rounded-xl hover:bg-brand-600 transition-colors cursor-pointer"
-              >
-                <RotateCcw size={14} /> Reset All Filters
-              </button>
+              <div className="flex items-center justify-center gap-3">
+                {hasActiveFilters && (
+                  <button
+                    onClick={resetFilters}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-500 text-white font-bold text-xs rounded-xl hover:bg-brand-600 transition-colors cursor-pointer"
+                  >
+                    <RotateCcw size={14} /> Reset All Filters
+                  </button>
+                )}
+                <Link
+                  to="/category/all"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-100 text-slate-700 font-bold text-xs rounded-xl hover:bg-slate-200 transition-colors cursor-pointer"
+                >
+                  Browse All Products
+                </Link>
+              </div>
             </div>
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">

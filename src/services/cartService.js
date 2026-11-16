@@ -10,7 +10,7 @@
  * - Elimination of client-side price tampering by relying on database relations
  * - Strict error propagation (stops order checkout if sync fails)
  */
-import { supabase, isSupabaseConfigured } from '../lib/supabase'
+import { supabase, isSupabaseConfigured } from '../lib/supabase.js'
 
 /**
  * UUID validator to ensure values match PostgreSQL UUID column syntax.
@@ -20,6 +20,48 @@ export function isValidUUID(str) {
     typeof str === 'string' &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str.trim())
   )
+}
+
+/**
+ * Pure validator for CartContext.addItem().
+ * Ensures callers receive an explicit `{ ok, error }` contract when cart addition
+ * cannot proceed (missing product, invalid qty, inactive/out-of-stock item, or non-UUID in Supabase mode).
+ */
+export function validateCartAddition(
+  product,
+  quantity = 1,
+  { supabaseConfigured = isSupabaseConfigured } = {}
+) {
+  if (!product || typeof product !== 'object') {
+    return { ok: false, error: 'Product information is missing.' }
+  }
+
+  const pId = product.productId || product.id
+  if (!pId) {
+    return { ok: false, error: 'Product identifier is missing.' }
+  }
+
+  const qty = Number(quantity)
+  if (!Number.isFinite(qty) || qty < 1) {
+    return { ok: false, error: 'Quantity must be at least 1.' }
+  }
+
+  if (product.is_active === false || product.inStock === false) {
+    return { ok: false, error: `${product.name || 'This product'} is currently unavailable.` }
+  }
+
+  if (product.stock !== undefined && product.stock !== null && Number(product.stock) <= 0) {
+    return { ok: false, error: `${product.name || 'This product'} is currently out of stock.` }
+  }
+
+  if (supabaseConfigured && !isValidUUID(String(pId))) {
+    return {
+      ok: false,
+      error: `${product.name || 'This product'} cannot be added to your cart because it lacks a valid product ID.`,
+    }
+  }
+
+  return { ok: true, error: null }
 }
 
 /**
@@ -81,10 +123,70 @@ export async function getOrCreateUserCart(userId) {
 }
 
 /**
+ * Intelligently merges a guest's local cart items with the authenticated
+ * user's existing database cart items.
+ *
+ * Rules:
+ * - Matches items by item key (product ID + variant ID).
+ * - Combines quantities for duplicate items, respecting available stock limits.
+ * - Preserves distinct variants of the same product.
+ * - Retains items unique to either the guest cart or the database cart.
+ * - Returns a new merged array without mutating inputs.
+ */
+export function mergeCarts(guestItems = [], dbItems = []) {
+  if (!Array.isArray(guestItems) || guestItems.length === 0) {
+    return Array.isArray(dbItems) ? [...dbItems] : []
+  }
+  if (!Array.isArray(dbItems) || dbItems.length === 0) {
+    return [...guestItems]
+  }
+
+  const getItemKey = (item) => {
+    if (!item) return ''
+    if (item.cartItemId) return String(item.cartItemId)
+    const pId = item.productId || item.id
+    const vId = item.variant?.id || item.variant?.name || ''
+    return vId ? `${pId}-${vId}` : String(pId)
+  }
+
+  // Start with a clone of database items as baseline
+  const merged = [...dbItems]
+
+  for (const guestItem of guestItems) {
+    const key = getItemKey(guestItem)
+    const existingIndex = merged.findIndex(i => getItemKey(i) === key)
+
+    if (existingIndex > -1) {
+      const existing = merged[existingIndex]
+      const existingQty = Math.max(1, Number(existing.quantity) || 1)
+      const guestQty = Math.max(1, Number(guestItem.quantity) || 1)
+      const combinedQty = existingQty + guestQty
+
+      // Check stock limits from either record
+      const stockLimit = existing.stock !== undefined
+        ? Number(existing.stock)
+        : (guestItem.stock !== undefined ? Number(guestItem.stock) : Infinity)
+      const clampedQty = stockLimit > 0 ? Math.min(combinedQty, stockLimit) : combinedQty
+
+      merged[existingIndex] = {
+        ...existing,
+        ...guestItem,
+        quantity: clampedQty,
+      }
+    } else {
+      merged.push({ ...guestItem })
+    }
+  }
+
+  return merged
+}
+
+/**
  * Synchronizes client cart items into the Supabase `cart_items` table.
  *
- * Replaces any existing items in the user's database cart with current items.
- * Validates product IDs and quantities before touching the database.
+ * Exclusively invokes the atomic `sync_user_cart` PostgreSQL RPC (single ACID transaction).
+ * If the RPC fails or is missing, returns an explicit failure without falling back
+ * to unsafe, non-atomic multi-request operations.
  */
 export async function syncCartToSupabase(cartItems, userId) {
   if (!supabase || !isSupabaseConfigured) {
@@ -117,66 +219,38 @@ export async function syncCartToSupabase(cartItems, userId) {
       const qty = Math.max(1, Number(item.quantity) || 1)
 
       validatedItems.push({
-        productId: pId,
-        variantId: validVariantId,
+        product_id: pId,
+        variant_id: validVariantId,
         quantity: qty,
       })
     }
   }
 
-  // 2. Ensure user has a cart record
-  const { cartId, error: cartError } = await getOrCreateUserCart(userId)
-  if (cartError || !cartId) {
-    return {
-      ok: false,
-      error: cartError || new Error('Could not establish database cart for authenticated user.'),
-    }
-  }
-
+  // 2. Execute atomic PostgreSQL RPC `sync_user_cart` (Single ACID transaction)
   try {
-    // 3. If the cart is empty, delete existing cart_items
-    if (isCartEmpty) {
-      const { error: delError } = await supabase
-        .from('cart_items')
-        .delete()
-        .eq('cart_id', cartId)
+    const { data: rpcResult, error: rpcError } = await supabase.rpc('sync_user_cart', {
+      p_items: validatedItems,
+    })
 
-      if (delError) {
-        return { ok: false, error: delError }
+    if (rpcError) {
+      console.error('[cartService] sync_user_cart RPC failed:', rpcError)
+      const isMissing = rpcError.code === 'PGRST202' || rpcError.code === '42883'
+      const errMessage = isMissing
+        ? 'Database cart synchronization function (sync_user_cart) is not available. Please ensure database migrations are applied.'
+        : (rpcError.message || 'Database rejected cart synchronization.')
+      return { ok: false, error: new Error(errMessage) }
+    }
+
+    if (!rpcResult || !rpcResult.success) {
+      return {
+        ok: false,
+        error: new Error('Database cart synchronization did not confirm transaction commit.'),
       }
-      return { ok: true, cartId, count: 0 }
     }
 
-    // 4. Atomically refresh cart items (Delete existing + Insert fresh batch)
-    const { error: clearError } = await supabase
-      .from('cart_items')
-      .delete()
-      .eq('cart_id', cartId)
-
-    if (clearError) {
-      console.error('[cartService] Error clearing existing cart items:', clearError)
-      return { ok: false, error: clearError }
-    }
-
-    const preparedRows = validatedItems.map((v) => ({
-      cart_id: cartId,
-      product_id: v.productId,
-      variant_id: v.variantId,
-      quantity: v.quantity,
-    }))
-
-    const { error: insertError } = await supabase
-      .from('cart_items')
-      .insert(preparedRows)
-
-    if (insertError) {
-      console.error('[cartService] Error inserting synced cart items:', insertError)
-      return { ok: false, error: insertError }
-    }
-
-    return { ok: true, cartId, count: preparedRows.length }
+    return { ok: true, cartId: rpcResult.cart_id, count: rpcResult.item_count }
   } catch (err) {
-    console.error('[cartService] Exception during cart synchronization:', err)
+    console.error('[cartService] Exception during sync_user_cart RPC invocation:', err)
     return { ok: false, error: err }
   }
 }
@@ -272,25 +346,15 @@ export async function fetchDatabaseCart(userId) {
 
 /**
  * Clears all items from the database cart.
+ * Atomically invokes syncCartToSupabase with an empty items array,
+ * leveraging the transactional sync_user_cart RPC.
  */
 export async function clearDatabaseCart(userId) {
   if (!supabase || !isSupabaseConfigured || !userId) return { success: false }
 
   try {
-    const { data: cart } = await supabase
-      .from('carts')
-      .select('id')
-      .eq('user_id', userId)
-      .maybeSingle()
-
-    if (!cart?.id) return { success: true }
-
-    const { error } = await supabase
-      .from('cart_items')
-      .delete()
-      .eq('cart_id', cart.id)
-
-    return { success: !error, error }
+    const res = await syncCartToSupabase([], userId)
+    return { success: res.ok, error: res.error }
   } catch (err) {
     return { success: false, error: err }
   }

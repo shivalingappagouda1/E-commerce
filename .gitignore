@@ -28,3 +28,11 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Local-only project documentation
+docs-local/
+
+# Environment variables
+.env
+.env.*
+!.env.example

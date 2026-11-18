@@ -237,7 +237,7 @@ export default function Navbar() {
                     <span>My Wishlist ({wlCount})</span>
                   </Link>
 
-                  {isAdmin && (
+                  {(isAdmin || profile?.role === 'admin') && (
                     <Link
                       to="/admin"
                       onClick={() => setUserOpen(false)}
@@ -391,7 +391,7 @@ export default function Navbar() {
               >
                 <Flame size={17} /> Super Deals & Discounts
               </Link>
-              {isAdmin && (
+              {(isAdmin || profile?.role === 'admin') && (
                 <Link
                   to="/admin"
                   onClick={() => setMenuOpen(false)}

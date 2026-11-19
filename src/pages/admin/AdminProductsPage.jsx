@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
-  Plus, Search, Edit2, Trash2, Filter, X
+  Plus, Search, Edit2, Trash2, Filter, X, Upload, Star, Video, PlayCircle
 } from 'lucide-react'
 import {
   adminFetchProducts,
@@ -73,6 +73,9 @@ export default function AdminProductsPage() {
   })
   const [saving, setSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
+  const [imageItems, setImageItems] = useState([])
+  const [videoItems, setVideoItems] = useState([])
+  const [videoUrlDraft, setVideoUrlDraft] = useState('')
 
   useEffect(() => {
     loadData()
@@ -125,6 +128,9 @@ export default function AdminProductsPage() {
       is_featured: false,
       is_active: true,
     })
+    setImageItems([])
+    setVideoItems([])
+    setVideoUrlDraft('')
     setErrorMsg('')
     setModalOpen(true)
   }
@@ -134,6 +140,21 @@ export default function AdminProductsPage() {
     const catId = resolveProductCategoryId(product, categories)
     const catName = resolveProductCategoryName(product, categories, catId)
 
+    const existingImages = (product.product_images || [])
+      .slice()
+      .sort((a, b) => Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary)))
+      .map(item => ({ url: item.image_url, file: null }))
+      .filter(item => item.url)
+    if (!existingImages.length && product.image) existingImages.push({ url: product.image, file: null })
+    setImageItems(existingImages.slice(0, 10))
+    setVideoItems((product.product_videos || []).slice(0, 2).map(item => ({
+      id: item.id,
+      type: item.video_type || 'youtube',
+      url: item.video_url,
+      title: item.title || '',
+      file: null,
+    })))
+    setVideoUrlDraft('')
     setFormData({
       name: product.name || '',
       slug: product.slug || '',
@@ -169,6 +190,87 @@ export default function AdminProductsPage() {
     setFormData(next)
   }
 
+  function handleImageSelection(event) {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (!files.length) return
+    const remaining = 10 - imageItems.length
+    if (files.length > remaining) setErrorMsg(`Maximum 10 images per product. ${remaining} slot(s) remaining.`)
+    const accepted = files.slice(0, Math.max(0, remaining))
+    const valid = accepted.filter(file => {
+      const okType = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)
+      const okSize = file.size <= 512 * 1024
+      if (!okType) setErrorMsg(`${file.name}: use JPG, PNG, WEBP, or GIF images.`)
+      else if (!okSize) setErrorMsg(`${file.name}: image must be 0.5 MB (512 KB) or smaller.`)
+      return okType && okSize
+    })
+    setImageItems(current => [...current, ...valid.map(file => ({ file, url: URL.createObjectURL(file) }))])
+  }
+
+  function removeImage(index) {
+    setImageItems(current => current.filter((_, i) => i !== index))
+  }
+
+  function makePrimaryImage(index) {
+    setImageItems(current => {
+      const next = [...current]
+      const [selected] = next.splice(index, 1)
+      next.unshift(selected)
+      return next
+    })
+  }
+
+
+  function addYouTubeVideo() {
+    const value = videoUrlDraft.trim()
+    if (!value) return
+    if (videoItems.length >= 2) {
+      setErrorMsg('Maximum 2 videos per product.')
+      return
+    }
+    let parsed
+    try {
+      parsed = new URL(value)
+    } catch {
+      setErrorMsg('Enter a valid YouTube video URL.')
+      return
+    }
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase()
+    const validHost = ['youtube.com', 'm.youtube.com', 'youtu.be'].includes(host)
+    const videoId = host === 'youtu.be'
+      ? parsed.pathname.split('/').filter(Boolean)[0]
+      : (parsed.searchParams.get('v') || parsed.pathname.match(/\/(?:embed|shorts)\/([^/?]+)/)?.[1])
+    if (!validHost || !videoId || !/^[A-Za-z0-9_-]{6,}$/.test(videoId)) {
+      setErrorMsg('Enter a valid YouTube watch, Shorts, or youtu.be link.')
+      return
+    }
+    setVideoItems(current => [...current, { type: 'youtube', url: value, title: 'Product video', file: null }])
+    setVideoUrlDraft('')
+    setErrorMsg('')
+  }
+
+  function handleVideoSelection(event) {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (!files.length) return
+    const remaining = 2 - videoItems.length
+    if (files.length > remaining) setErrorMsg(`Maximum 2 videos per product. ${remaining} slot(s) remaining.`)
+    const accepted = files.slice(0, Math.max(0, remaining)).filter(file => {
+      const okType = ['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type)
+      const okSize = file.size <= 3 * 1024 * 1024
+      if (!okType) setErrorMsg(`${file.name}: use MP4, WEBM, or MOV video files.`)
+      else if (!okSize) setErrorMsg(`${file.name}: video must be 3 MB or smaller.`)
+      return okType && okSize
+    })
+    setVideoItems(current => [...current, ...accepted.map(file => ({
+      type: 'upload', file, url: URL.createObjectURL(file), title: file.name,
+    }))])
+  }
+
+  function removeVideo(index) {
+    setVideoItems(current => current.filter((_, i) => i !== index))
+  }
+
   async function handleSave(e) {
     e.preventDefault()
     if (!formData.name || !formData.price) {
@@ -182,6 +284,9 @@ export default function AdminProductsPage() {
     const productPayload = {
       ...(editingProduct ? { id: editingProduct.id } : {}),
       ...formData,
+      images: imageItems,
+      image: imageItems[0]?.url || '',
+      videos: videoItems,
       category_id: formData.category_id || null,
     }
 
@@ -516,15 +621,68 @@ export default function AdminProductsPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Image URL</label>
-                <input
-                  type="url"
-                  value={formData.image}
-                  onChange={e => setFormData({ ...formData, image: e.target.value })}
-                  placeholder="https://images.unsplash.com/photo-..."
-                  className="w-full p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500"
-                />
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="block font-semibold text-slate-700">Product Images</label>
+                  <span className="text-[11px] text-slate-500">{imageItems.length}/10 images</span>
+                </div>
+                <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-slate-300 hover:border-brand-400 rounded-xl p-5 cursor-pointer bg-slate-50 hover:bg-brand-50/30 transition-colors">
+                  <Upload size={22} className="text-slate-500" />
+                  <span className="font-semibold text-slate-700">Choose images from your device</span>
+                  <span className="text-[10px] text-slate-500">JPG, PNG, WEBP or GIF · Maximum 0.5 MB (512 KB) each · Up to 10 images</span>
+                  <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple disabled={imageItems.length >= 10} onChange={handleImageSelection} className="sr-only" />
+                </label>
+                {imageItems.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    {imageItems.map((item, index) => (
+                      <div key={`${item.url}-${index}`} className="relative rounded-xl border border-slate-200 bg-white p-2">
+                        <img src={item.url} alt={`Product image ${index + 1}`} className="w-full h-20 object-contain rounded-lg" />
+                        {index === 0 && <span className="absolute left-1 top-1 bg-brand-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">PRIMARY</span>}
+                        <div className="flex items-center justify-between mt-2">
+                          <button type="button" onClick={() => makePrimaryImage(index)} disabled={index === 0} title="Set as primary" className="p-1 text-amber-500 disabled:opacity-30"><Star size={14} fill={index === 0 ? 'currentColor' : 'none'} /></button>
+                          <button type="button" onClick={() => removeImage(index)} title="Remove image" className="p-1 text-red-500 hover:bg-red-50 rounded"><X size={14} /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 border-t border-slate-100 pt-4">
+                <div className="flex items-center justify-between">
+                  <label className="block font-semibold text-slate-700">Product Videos</label>
+                  <span className="text-[11px] text-slate-500">{videoItems.length}/2 videos</span>
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-semibold text-slate-600">Upload MP4 / WEBM / MOV (max 3 MB each)</label>
+                  <label className="flex items-center justify-center gap-2 border-2 border-dashed border-slate-300 hover:border-brand-400 rounded-xl p-3 cursor-pointer bg-slate-50 hover:bg-brand-50/30 transition-colors">
+                    <Video size={18} className="text-slate-500" />
+                    <span className="font-semibold text-slate-700">Choose video from device</span>
+                    <input type="file" accept="video/mp4,video/webm,video/quicktime" multiple disabled={videoItems.length >= 2} onChange={handleVideoSelection} className="sr-only" />
+                  </label>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-semibold text-slate-600">Or add a YouTube link</label>
+                  <div className="flex gap-2">
+                    <input type="url" value={videoUrlDraft} onChange={e => setVideoUrlDraft(e.target.value)} placeholder="https://www.youtube.com/watch?v=..." disabled={videoItems.length >= 2} className="min-w-0 flex-1 p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                    <button type="button" onClick={addYouTubeVideo} disabled={videoItems.length >= 2 || !videoUrlDraft.trim()} className="px-3 rounded-lg bg-slate-900 text-white font-semibold disabled:opacity-40">Add link</button>
+                  </div>
+                </div>
+                {videoItems.length > 0 && (
+                  <div className="space-y-2">
+                    {videoItems.map((item, index) => (
+                      <div key={`${item.url}-${index}`} className="flex items-center gap-3 rounded-xl border border-slate-200 p-2">
+                        <div className="w-16 h-12 rounded-lg bg-slate-900 text-white flex items-center justify-center shrink-0"><PlayCircle size={22} /></div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-slate-700 truncate">{item.title || (item.type === 'youtube' ? 'YouTube video' : 'Uploaded video')}</p>
+                          <p className="text-[10px] text-slate-400">{item.type === 'youtube' ? 'YouTube link' : item.file ? `${(item.file.size / (1024 * 1024)).toFixed(1)} MB · Upload pending` : 'Stored video'}</p>
+                        </div>
+                        <button type="button" onClick={() => removeVideo(index)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg" aria-label="Remove video"><X size={15} /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[10px] text-slate-400">Up to 2 videos per product. Uploaded videos are stored in Supabase; YouTube links are embedded in the storefront.</p>
               </div>
 
               <div className="flex items-center gap-6 pt-2">

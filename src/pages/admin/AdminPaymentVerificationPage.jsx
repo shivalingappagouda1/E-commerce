@@ -44,6 +44,15 @@ const ORDER_STATUS_BADGE = {
   refunded: 'bg-purple-50 text-purple-700 border-purple-200',
 }
 
+
+function getOrderProductName(order) {
+  const items = order.order_items || order.items || []
+  if (!Array.isArray(items) || items.length === 0) return '—'
+  const getName = item => item.product_name || item.name || item.product?.name || item.products?.name || 'Product name unavailable'
+  const firstName = getName(items[0])
+  return items.length > 1 ? `${firstName} + ${items.length - 1} more` : firstName
+}
+
 export default function AdminPaymentVerificationPage({
   initialOrders = null,
   initialSelectedOrder = null,
@@ -680,6 +689,7 @@ export default function AdminPaymentVerificationPage({
               <tr>
                 <th className="px-4 py-3">Order ID</th>
                 <th className="px-4 py-3">Customer</th>
+                <th className="px-4 py-3">Product</th>
                 <th className="px-4 py-3">Order Date</th>
                 <th className="px-4 py-3">Payment Method</th>
                 <th className="px-4 py-3">Amount</th>
@@ -692,14 +702,14 @@ export default function AdminPaymentVerificationPage({
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan="9" className="text-center py-12 text-slate-400">
+                  <td colSpan="10" className="text-center py-12 text-slate-400">
                     <Loader2 size={24} className="animate-spin mx-auto mb-2 text-purple-600" />
                     <span>Loading payment verification records...</span>
                   </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="text-center py-12 text-slate-400">
+                  <td colSpan="10" className="text-center py-12 text-slate-400">
                     <CreditCard size={28} className="mx-auto mb-2 text-slate-300" />
                     <p className="font-semibold text-slate-600">No payment records found</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">Try adjusting your search query or filters.</p>
@@ -753,6 +763,13 @@ export default function AdminPaymentVerificationPage({
                             {order.customer_phone || order.profiles?.phone || order.address?.phone}
                           </span>
                         )}
+                      </td>
+
+                      {/* Product Name */}
+                      <td className="px-4 py-3.5 text-slate-600 min-w-[180px] max-w-[260px]">
+                        <span className="block truncate" title={getOrderProductName(order)}>
+                          {getOrderProductName(order)}
+                        </span>
                       </td>
 
                       {/* Order Date */}

@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   Heart, ShoppingCart, Star, ShieldCheck, CheckCircle2,
   Truck, RotateCcw, Check, AlertCircle, ChevronRight,
-  Zap, MapPin, MessageSquare, Plus, X
+  Zap, MapPin, MessageSquare, Plus, X, ChevronLeft, Video as VideoIcon, PlayCircle
 } from 'lucide-react'
 import {
   fetchProductBySlug,
@@ -29,6 +29,7 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true)
   const [related, setRelated] = useState([])
   const [selectedImage, setSelectedImage] = useState(null)
+  const [selectedVideo, setSelectedVideo] = useState(null)
   const [quantity, setQuantity] = useState(1)
   const [selectedVariant, setSelectedVariant] = useState(null)
 
@@ -55,7 +56,11 @@ export default function ProductDetailPage() {
     setLoading(true)
     fetchProductBySlug(slug).then(({ data }) => {
       setProduct(data)
-      setSelectedImage(data?.image || null)
+      const orderedImages = (data?.product_images || [])
+        .slice()
+        .sort((a, b) => Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary)))
+      setSelectedImage(data?.image || orderedImages[0]?.image_url || null)
+      setSelectedVideo(null)
       if (data?.product_variants && data.product_variants.length > 0) {
         setSelectedVariant(data.product_variants[0])
       }
@@ -200,11 +205,58 @@ export default function ProductDetailPage() {
     }
   }
 
-  // Multi-image list
-  const galleryImages = [
-    product.image,
-    ...(product.product_images ? product.product_images.map(img => img.image_url) : [])
-  ].filter(Boolean)
+  // Combined image and video gallery.
+  const galleryMedia = [
+    ...Array.from(new Set([
+      product.image,
+      ...((product.product_images || [])
+        .slice()
+        .sort((a, b) => Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary)))
+        .map(img => img.image_url)),
+    ].filter(Boolean))).map(url => ({ type: 'image', url, key: `image:${url}` })),
+    ...((product.product_videos || [])
+      .slice()
+      .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
+      .map((video, index) => ({
+        type: video.video_type === 'youtube' ? 'youtube' : 'video',
+        url: video.video_url,
+        title: video.title || `Product video ${index + 1}`,
+        key: `video:${video.id || video.video_url}`,
+      }))),
+  ]
+
+  const selectedMediaIndex = Math.max(0, galleryMedia.findIndex(item =>
+    selectedVideo ? item.url === selectedVideo : item.url === selectedImage
+  ))
+  const activeMedia = galleryMedia[selectedMediaIndex] || galleryMedia[0]
+
+  function selectGalleryMedia(item) {
+    if (item.type === 'image') {
+      setSelectedImage(item.url)
+      setSelectedVideo(null)
+    } else {
+      setSelectedVideo(item.url)
+    }
+  }
+
+  function moveGallery(direction) {
+    if (galleryMedia.length < 2) return
+    const nextIndex = (selectedMediaIndex + direction + galleryMedia.length) % galleryMedia.length
+    selectGalleryMedia(galleryMedia[nextIndex])
+  }
+
+  function getYouTubeEmbedUrl(url) {
+    try {
+      const parsed = new URL(url)
+      const host = parsed.hostname.replace(/^www\./, '').toLowerCase()
+      const id = host === 'youtu.be'
+        ? parsed.pathname.split('/').filter(Boolean)[0]
+        : (parsed.searchParams.get('v') || parsed.pathname.match(/\/(?:embed|shorts)\/([^/?]+)/)?.[1])
+      return id ? `https://www.youtube-nocookie.com/embed/${id}?rel=0` : null
+    } catch {
+      return null
+    }
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-10">
@@ -224,12 +276,49 @@ export default function ProductDetailPage() {
         {/* Gallery */}
         <div className="space-y-4">
           <div className="relative bg-white rounded-3xl border border-slate-200/80 p-8 flex items-center justify-center min-h-[420px] shadow-xs overflow-hidden">
-            <img
-              src={selectedImage || product.image}
-              alt={product.name}
-              className="max-h-[380px] w-full object-contain transition-all duration-300"
-              onError={e => { e.currentTarget.src = 'https://placehold.co/400x400?text=Product+Image' }}
-            />
+            {activeMedia?.type === 'youtube' ? (
+              <iframe
+                key={activeMedia.url}
+                src={getYouTubeEmbedUrl(activeMedia.url) || ''}
+                title={activeMedia.title || `${product.name} video`}
+                className="w-full aspect-video rounded-xl"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                referrerPolicy="strict-origin-when-cross-origin"
+              />
+            ) : activeMedia?.type === 'video' ? (
+              <video
+                key={activeMedia.url}
+                src={activeMedia.url}
+                controls
+                playsInline
+                preload="metadata"
+                className="w-full max-h-[380px] rounded-xl bg-black"
+              >
+                Your browser does not support HTML video.
+              </video>
+            ) : (
+              <img
+                src={activeMedia?.url || selectedImage || product.image}
+                alt={product.name}
+                className="max-h-[380px] w-full object-contain transition-all duration-300"
+                onError={e => { e.currentTarget.src = 'https://placehold.co/400x400?text=Product+Image' }}
+              />
+            )}
+
+            {galleryMedia.length > 1 && (
+              <>
+                <button type="button" onClick={() => moveGallery(-1)} aria-label="Previous product media" className="absolute left-3 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-white/95 border border-slate-200 shadow-md text-slate-700 hover:text-brand-600 flex items-center justify-center">
+                  <ChevronLeft size={19} />
+                </button>
+                <button type="button" onClick={() => moveGallery(1)} aria-label="Next product media" className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-white/95 border border-slate-200 shadow-md text-slate-700 hover:text-brand-600 flex items-center justify-center">
+                  <ChevronRight size={19} />
+                </button>
+                <span className="absolute bottom-3 right-3 z-10 rounded-full bg-slate-900/65 text-white text-[10px] font-semibold px-2.5 py-1">
+                  {selectedMediaIndex + 1} / {galleryMedia.length}
+                </span>
+              </>
+            )}
 
             {/* Discount Ribbon */}
             {discountPercent > 0 && (
@@ -258,18 +347,27 @@ export default function ProductDetailPage() {
             </button>
           </div>
 
-          {/* Thumbnail Gallery */}
-          {galleryImages.length > 1 && (
+          {/* Image and video thumbnails */}
+          {galleryMedia.length > 1 && (
             <div className="flex items-center gap-3 overflow-x-auto pb-1">
-              {galleryImages.map((img, idx) => (
+              {galleryMedia.map((item, idx) => (
                 <button
-                  key={idx}
-                  onClick={() => setSelectedImage(img)}
-                  className={`w-16 h-16 rounded-xl border p-1 bg-white transition-all cursor-pointer ${
-                    selectedImage === img ? 'border-brand-500 ring-2 ring-brand-300' : 'border-slate-200 hover:border-slate-300'
+                  key={item.key}
+                  type="button"
+                  onClick={() => selectGalleryMedia(item)}
+                  aria-label={item.type === 'image' ? `Show product image ${idx + 1}` : `Play ${item.title || 'product video'}`}
+                  className={`relative w-16 h-16 shrink-0 rounded-xl border p-1 bg-white transition-all cursor-pointer ${
+                    idx === selectedMediaIndex ? 'border-brand-500 ring-2 ring-brand-300' : 'border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  <img src={img} alt="Thumbnail" className="w-full h-full object-contain" />
+                  {item.type === 'image' ? (
+                    <img src={item.url} alt={`Product thumbnail ${idx + 1}`} className="w-full h-full object-contain" />
+                  ) : (
+                    <span className="w-full h-full rounded-md bg-slate-900 text-white flex flex-col items-center justify-center gap-0.5">
+                      <PlayCircle size={20} />
+                      <span className="text-[8px] font-bold">VIDEO</span>
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

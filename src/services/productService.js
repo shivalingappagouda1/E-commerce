@@ -397,6 +397,7 @@ export async function fetchProductBySlug(slug) {
           *,
           categories ( id, name, slug ),
           product_images ( id, image_url, is_primary, sort_order ),
+          product_videos ( id, video_url, video_type, title, sort_order ),
           product_variants ( id, variant_type, variant_value, price_delta ),
           inventory ( id, quantity, low_stock_at ),
           reviews ( *, profiles ( full_name, avatar_url ) )

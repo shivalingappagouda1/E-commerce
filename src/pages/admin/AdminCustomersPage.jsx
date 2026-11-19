@@ -2,9 +2,9 @@ import { useState, useEffect, useMemo } from 'react'
 import {
   Users, UserCheck, CreditCard, TrendingUp, Search,
   ChevronLeft, ChevronRight, Eye, X, Calendar, Phone,
-  Mail, MapPin, ShoppingBag, ShieldCheck, AlertCircle
+  Mail, MapPin, ShoppingBag, ShieldCheck, AlertCircle, UserPlus
 } from 'lucide-react'
-import { adminFetchCustomers, adminFetchCustomerDetails } from '../../services/adminService'
+import { adminFetchCustomers, adminFetchCustomerDetails, adminPromoteCustomerToAdmin } from '../../services/adminService'
 import { formatPrice } from '../../utils/format'
 
 const ITEMS_PER_PAGE = 8
@@ -47,6 +47,8 @@ export default function AdminCustomersPage() {
   const [selectedCustomerId, setSelectedCustomerId] = useState(null)
   const [customerDetails, setCustomerDetails] = useState(null)
   const [detailsLoading, setDetailsLoading] = useState(false)
+  const [promotingCustomerId, setPromotingCustomerId] = useState(null)
+  const [actionMessage, setActionMessage] = useState(null)
 
   useEffect(() => {
     async function init() {
@@ -75,6 +77,41 @@ export default function AdminCustomersPage() {
   function handleCloseModal() {
     setSelectedCustomerId(null)
     setCustomerDetails(null)
+  }
+
+
+  async function handlePromoteCustomer(customer) {
+    if (!customer || customer.role !== 'customer' || customer.is_demo) return
+
+    const confirmed = window.confirm(
+      `Promote ${customer.full_name || customer.email || 'this account'} to Admin? They will receive administrator privileges after promotion.`
+    )
+    if (!confirmed) return
+
+    setPromotingCustomerId(customer.id)
+    setActionMessage(null)
+
+    const result = await adminPromoteCustomerToAdmin(customer.id)
+    if (!result.success) {
+      setActionMessage({
+        type: 'error',
+        text: result.error?.message || 'Could not promote this account.',
+      })
+      setPromotingCustomerId(null)
+      return
+    }
+
+    // Reflect the confirmed database result immediately in the current list.
+    setCustomers(current => current.map(item =>
+      String(item.id) === String(customer.id)
+        ? { ...item, role: 'admin' }
+        : item
+    ))
+    setActionMessage({
+      type: 'success',
+      text: `${customer.email || customer.full_name || 'Account'} has been promoted to Admin.`,
+    })
+    setPromotingCustomerId(null)
   }
 
   // Filter & Sort
@@ -242,6 +279,16 @@ export default function AdminCustomersPage() {
         </div>
       )}
 
+      {actionMessage && (
+        <div className={`p-3 rounded-xl border text-sm ${
+          actionMessage.type === 'success'
+            ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+            : 'bg-red-50 border-red-200 text-red-700'
+        }`}>
+          {actionMessage.text}
+        </div>
+      )}
+
       {/* Customers Table */}
       <div className="bg-white rounded-xl border border-slate-200/80 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -387,13 +434,26 @@ export default function AdminCustomersPage() {
 
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-center">
-                        <button
-                          onClick={() => handleViewCustomer(customer.id)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors cursor-pointer"
-                        >
-                          <Eye size={13} />
-                          <span>View</span>
-                        </button>
+                        <div className="inline-flex flex-wrap items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleViewCustomer(customer.id)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Eye size={13} />
+                            <span>View</span>
+                          </button>
+                          {customer.role === 'customer' && !customer.is_demo && (
+                            <button
+                              onClick={() => handlePromoteCustomer(customer)}
+                              disabled={promotingCustomerId === customer.id}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Promote this verified account to administrator"
+                            >
+                              <UserPlus size={13} />
+                              <span>{promotingCustomerId === customer.id ? 'Promoting…' : 'Make Admin'}</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )

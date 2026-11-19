@@ -23,6 +23,15 @@ const STATUS_BADGE = {
   cancelled: 'bg-red-50 text-red-700 border-red-200',
 }
 
+
+function getOrderProductName(order) {
+  const items = order.order_items || order.items || []
+  if (!Array.isArray(items) || items.length === 0) return '—'
+  const getName = item => item.product_name || item.name || item.product?.name || item.products?.name || 'Product name unavailable'
+  const firstName = getName(items[0])
+  return items.length > 1 ? `${firstName} + ${items.length - 1} more` : firstName
+}
+
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -111,6 +120,7 @@ export default function AdminOrdersPage() {
               <tr>
                 <th className="px-5 py-3">Order ID</th>
                 <th className="px-5 py-3">Customer</th>
+                <th className="px-5 py-3">Product</th>
                 <th className="px-5 py-3">Date</th>
                 <th className="px-5 py-3">Items</th>
                 <th className="px-5 py-3">Total</th>
@@ -121,13 +131,13 @@ export default function AdminOrdersPage() {
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-12 text-slate-400">
+                  <td colSpan="8" className="text-center py-12 text-slate-400">
                     Loading orders...
                   </td>
                 </tr>
               ) : filteredOrders.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-12 text-slate-400">
+                  <td colSpan="8" className="text-center py-12 text-slate-400">
                     No orders found matching your filters.
                   </td>
                 </tr>
@@ -156,6 +166,13 @@ export default function AdminOrdersPage() {
                         {order.customer_phone && (
                           <span className="text-[11px] text-slate-400">{order.customer_phone}</span>
                         )}
+                      </td>
+
+                      {/* Product Name */}
+                      <td className="px-5 py-3 text-slate-600 min-w-[180px] max-w-[260px]">
+                        <span className="block truncate" title={getOrderProductName(order)}>
+                          {getOrderProductName(order)}
+                        </span>
                       </td>
 
                       {/* Date */}

@@ -258,6 +258,7 @@ export async function adminFetchProducts() {
         *,
         categories ( id, name, slug ),
         product_images ( id, image_url, is_primary ),
+        product_videos ( id, video_url, video_type, title, sort_order ),
         inventory ( id, quantity, low_stock_at )
       `)
       .order('created_at', { ascending: false })
@@ -285,6 +286,112 @@ export async function adminFetchProducts() {
     console.error(`[adminService] Error reading ${ADMIN_PRODUCTS_STORAGE}:`, err)
     return { data: [], error: null }
   }
+}
+
+
+/**
+ * Uploads and saves up to 10 product images.
+ * Existing URL entries are retained; File entries are uploaded to Supabase Storage.
+ */
+async function saveProductImages(productId, images, fallbackImage) {
+  const items = Array.isArray(images)
+    ? images.slice(0, 10)
+    : (fallbackImage ? [{ url: fallbackImage }] : [])
+
+  const uploadedUrls = []
+  for (const item of items) {
+    if (item?.file instanceof File) {
+      const file = item.file
+      if (file.size > 512 * 1024) return { error: new Error(`${file.name}: image must be 0.5 MB (512 KB) or smaller.`) }
+      const extension = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
+      const path = `${productId}/${crypto.randomUUID()}.${extension}`
+      const { error: uploadError } = await supabase.storage
+        .from('product-images')
+        .upload(path, file, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: file.type || 'image/jpeg',
+        })
+      if (uploadError) return { error: uploadError }
+
+      const { data } = supabase.storage.from('product-images').getPublicUrl(path)
+      if (!data?.publicUrl) return { error: new Error('Could not create a public URL for the uploaded image.') }
+      uploadedUrls.push(data.publicUrl)
+    } else if (item?.url) {
+      uploadedUrls.push(item.url)
+    }
+  }
+
+  const { error: deleteError } = await supabase
+    .from('product_images')
+    .delete()
+    .eq('product_id', productId)
+  if (deleteError) return { error: deleteError }
+
+  if (uploadedUrls.length) {
+    const rows = uploadedUrls.map((image_url, index) => ({
+      product_id: productId,
+      image_url,
+      is_primary: index === 0,
+    }))
+    const { error: insertError } = await supabase.from('product_images').insert(rows)
+    if (insertError) return { error: insertError }
+  }
+
+  return { error: null }
+}
+
+
+/** Upload and save at most two product videos (MP4/WEBM/MOV or YouTube URLs). */
+async function saveProductVideos(productId, videos) {
+  const items = Array.isArray(videos) ? videos.slice(0, 2) : []
+  const rows = []
+
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index]
+    let videoUrl = item.url
+    let videoType = item.type === 'youtube' ? 'youtube' : 'upload'
+
+    if (item.file instanceof File) {
+      const file = item.file
+      if (file.size > 3 * 1024 * 1024) return { error: new Error(`${file.name}: video must be 3 MB or smaller.`) }
+      const extension = (file.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4'
+      const path = `${productId}/${crypto.randomUUID()}.${extension}`
+      const { error: uploadError } = await supabase.storage
+        .from('product-videos')
+        .upload(path, file, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: file.type || 'video/mp4',
+        })
+      if (uploadError) return { error: uploadError }
+      const { data } = supabase.storage.from('product-videos').getPublicUrl(path)
+      if (!data?.publicUrl) return { error: new Error('Could not create a public URL for the uploaded video.') }
+      videoUrl = data.publicUrl
+      videoType = 'upload'
+    }
+
+    if (!videoUrl) continue
+    rows.push({
+      product_id: productId,
+      video_url: videoUrl,
+      video_type: videoType,
+      title: item.title || (videoType === 'youtube' ? 'YouTube video' : 'Product video'),
+      sort_order: index,
+    })
+  }
+
+  const { error: deleteError } = await supabase
+    .from('product_videos')
+    .delete()
+    .eq('product_id', productId)
+  if (deleteError) return { error: deleteError }
+
+  if (rows.length) {
+    const { error: insertError } = await supabase.from('product_videos').insert(rows)
+    if (insertError) return { error: insertError }
+  }
+  return { error: null }
 }
 
 export async function adminSaveProduct(product) {
@@ -317,20 +424,16 @@ export async function adminSaveProduct(product) {
         .single()
 
       if (!error && newProd) {
-        // Insert default image if provided
-        if (product.image) {
-          await supabase.from('product_images').insert([{
-            product_id: newProd.id,
-            image_url: product.image,
-            is_primary: true,
-          }])
-        }
-        // Insert inventory
-        await supabase.from('inventory').insert([{
+        const imageResult = await saveProductImages(newProd.id, product.images, product.image)
+        if (imageResult.error) return { data: newProd, error: imageResult.error }
+        const videoResult = await saveProductVideos(newProd.id, product.videos)
+        if (videoResult.error) return { data: newProd, error: videoResult.error }
+        const { error: inventoryError } = await supabase.from('inventory').insert([{
           product_id: newProd.id,
           quantity: Number(product.stock || 20),
           low_stock_at: 5,
         }])
+        if (inventoryError) return { data: newProd, error: inventoryError }
         return { data: newProd, error: null }
       }
       return { data: null, error }
@@ -344,10 +447,19 @@ export async function adminSaveProduct(product) {
 
       if (!error && updated) {
         if (product.stock !== undefined) {
-          await supabase
+          const { error: inventoryError } = await supabase
             .from('inventory')
             .update({ quantity: Number(product.stock) })
             .eq('product_id', product.id)
+          if (inventoryError) return { data: updated, error: inventoryError }
+        }
+        if (Array.isArray(product.images)) {
+          const imageResult = await saveProductImages(product.id, product.images, product.image)
+          if (imageResult.error) return { data: updated, error: imageResult.error }
+        }
+        if (Array.isArray(product.videos)) {
+          const videoResult = await saveProductVideos(product.id, product.videos)
+          if (videoResult.error) return { data: updated, error: videoResult.error }
         }
         return { data: updated, error: null }
       }
@@ -355,8 +467,18 @@ export async function adminSaveProduct(product) {
     }
   }
 
+  // Local demo storage cannot persist device File objects or blob: preview URLs.
+  if ((Array.isArray(product.images) && product.images.some(item => item?.file instanceof File)) ||
+      (Array.isArray(product.videos) && product.videos.some(item => item?.file instanceof File))) {
+    return {
+      data: null,
+      error: new Error('Device image uploads require Supabase Storage. Configure the ShopKart Supabase project before uploading product media.'),
+    }
+  }
+
   // Fallback local mode (synchronized with customer storefront)
   const products = getLocal(ADMIN_PRODUCTS_STORAGE, [...SAMPLE_PRODUCTS])
+  const localImages = Array.isArray(product.images) ? product.images.map(item => item.url).filter(url => url && !url.startsWith('blob:')) : []
   let saved
   const discountVal = Number(product.discount_percent || product.discount || 0)
   const priceVal = Number(product.price)
@@ -381,7 +503,8 @@ export async function adminSaveProduct(product) {
       discount: discountVal,
       stock: stockVal,
       badge: product.badge || null,
-      image: product.image || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&q=80',
+      image: localImages[0] || product.image || 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&q=80',
+      product_images: localImages.map((image_url, index) => ({ image_url, is_primary: index === 0 })),
       rating: 4.5,
       reviewCount: 0,
       review_count: 0,
@@ -396,6 +519,7 @@ export async function adminSaveProduct(product) {
     saved = {
       ...existing,
       ...product,
+      ...(localImages.length ? { image: localImages[0], product_images: localImages.map((image_url, index) => ({ image_url, is_primary: index === 0 })) } : {}),
       category_id: product.category_id !== undefined ? (product.category_id || null) : (existing.category_id || null),
       category: product.category || existing.category || '',
       price: priceVal,
@@ -428,6 +552,7 @@ export async function adminDeleteProduct(id) {
   }
 
   const products = getLocal(ADMIN_PRODUCTS_STORAGE, [...SAMPLE_PRODUCTS])
+  const localImages = Array.isArray(product.images) ? product.images.map(item => item.url).filter(url => url && !url.startsWith('blob:')) : []
   const filtered = products.filter(p => p.id !== id)
   setLocal(ADMIN_PRODUCTS_STORAGE, filtered)
   return { success: true }
@@ -444,6 +569,7 @@ export async function adminToggleProductActive(id, currentStatus) {
   }
 
   const products = getLocal(ADMIN_PRODUCTS_STORAGE, [...SAMPLE_PRODUCTS])
+  const localImages = Array.isArray(product.images) ? product.images.map(item => item.url).filter(url => url && !url.startsWith('blob:')) : []
   const updated = products.map(p => {
     if (p.id === id) {
       const stock = Number(p.stock !== undefined ? p.stock : 20)
@@ -1398,6 +1524,7 @@ export async function adminUpdateStock(productId, newQuantity) {
   }
 
   const products = getLocal(ADMIN_PRODUCTS_STORAGE, [...SAMPLE_PRODUCTS])
+  const localImages = Array.isArray(product.images) ? product.images.map(item => item.url).filter(url => url && !url.startsWith('blob:')) : []
   const updated = products.map(p => {
     if (p.id === productId) {
       const qty = Number(newQuantity)
@@ -1417,114 +1544,212 @@ export async function adminUpdateStock(productId, newQuantity) {
    5. CUSTOMER MANAGEMENT
    ============================================================ */
 export async function adminFetchCustomers() {
-  if (supabase) {
+  if (shouldUseSupabaseClient()) {
     try {
-      // 1. Attempt secure admin RPC get_admin_customers (joins auth.users on server side)
-      const { data: rpcCustomers, error: rpcError } = await supabase.rpc('get_admin_customers')
+      // Prefer the secure RPC because it can include auth.users email addresses.
+      const { data: rpcCustomers, error: rpcError } =
+        await supabase.rpc('get_admin_customers')
 
-      let baseList = null
-      if (!rpcError && Array.isArray(rpcCustomers) && rpcCustomers.length > 0) {
-        baseList = rpcCustomers
-      } else {
-        // Fallback to querying public profiles table directly
-        const { data: profiles, error } = await supabase
+      let baseList = !rpcError && Array.isArray(rpcCustomers)
+        ? rpcCustomers
+        : []
+
+      // An empty RPC result must not be treated as proof that customers have no orders.
+      if (baseList.length === 0) {
+        const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
-          .select(`
-            id,
-            full_name,
-            phone,
-            avatar_url,
-            role,
-            created_at,
-            orders:orders ( id, status, total_amount, created_at )
-          `)
+          .select('id, full_name, email, phone, avatar_url, role, created_at')
           .order('created_at', { ascending: false })
 
-        if (!error && profiles && profiles.length > 0) {
-          baseList = profiles
+        if (profilesError) {
+          console.error('[adminService] Error fetching customer profiles:', profilesError)
+          return { data: [], error: profilesError }
         }
+
+        baseList = Array.isArray(profiles) ? profiles : []
       }
 
-      if (baseList && baseList.length > 0) {
-        const mapped = baseList.map(p => {
-          const ords = Array.isArray(p.orders) ? p.orders : []
-          const validOrders = ords.filter(o => o.status !== 'cancelled' && o.status !== 'refunded')
-          const totalSpend = validOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0)
-          const latestOrder = [...ords].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
+      // Fetch orders separately and calculate customer metrics from the actual orders table.
+      const { data: ordersData, error: ordersError } = await adminFetchOrders()
 
-          return {
-            id: p.id,
-            full_name: p.full_name || 'Customer',
-            email: p.email || null, // Never fabricate synthetic emails
-            phone: p.phone || 'N/A',
-            avatar_url: p.avatar_url,
-            role: p.role || 'customer',
-            created_at: p.created_at || new Date().toISOString(),
-            order_count: ords.length,
-            total_spend: totalSpend,
-            last_order_at: latestOrder?.created_at || null,
-            is_demo: false,
-          }
+      if (ordersError) {
+        console.error('[adminService] Error fetching orders for customer statistics:', ordersError)
+        return { data: [], error: ordersError }
+      }
+
+      const allOrders = Array.isArray(ordersData) ? ordersData : []
+
+      const mapped = baseList.map(profile => {
+        const profileId = String(profile.id)
+        const customerOrders = allOrders.filter(order => {
+          const userId = order.user_id == null ? '' : String(order.user_id)
+          const customerId = order.customer_id == null ? '' : String(order.customer_id)
+          return userId === profileId || customerId === profileId
         })
-        return { data: mapped, error: null }
-      }
-    } catch {
-      // Fall through to local fallback
+
+        // Count every matched order. Exclude cancelled/refunded orders from lifetime spend.
+        const spendEligibleOrders = customerOrders.filter(order => {
+          const status = String(order.status || '').toLowerCase()
+          return status !== 'cancelled' && status !== 'refunded'
+        })
+
+        const totalSpend = spendEligibleOrders.reduce((sum, order) => {
+          const amount = Number(order.total_amount)
+          return sum + (Number.isFinite(amount) ? amount : 0)
+        }, 0)
+
+        const latestOrder = customerOrders.reduce((latest, order) => {
+          if (!order.created_at) return latest
+          if (!latest || new Date(order.created_at) > new Date(latest.created_at)) return order
+          return latest
+        }, null)
+
+        return {
+          ...profile,
+          id: profile.id,
+          full_name: profile.full_name || 'Customer',
+          email: profile.email || null,
+          phone: profile.phone || 'N/A',
+          avatar_url: profile.avatar_url || null,
+          role: profile.role || 'customer',
+          created_at: profile.created_at || null,
+          order_count: customerOrders.length,
+          total_spend: totalSpend,
+          last_order_at: latestOrder?.created_at || null,
+          is_demo: false,
+        }
+      })
+
+      return { data: mapped, error: null }
+    } catch (err) {
+      console.error('[adminService] Unexpected customer fetch error:', err)
+      return { data: [], error: err }
     }
   }
 
-  // Local demo fallback
+  // Local demo mode only.
   let stored = getLocal(ADMIN_CUSTOMERS_STORAGE, null)
-  if (!stored) {
+  if (!Array.isArray(stored)) {
     stored = [...INITIAL_DEMO_CUSTOMERS]
     setLocal(ADMIN_CUSTOMERS_STORAGE, stored)
   }
 
-  const { data: ordersData } = await adminFetchOrders()
-  const orders = Array.isArray(ordersData) ? ordersData : []
+  const { data: ordersData, error: ordersError } = await adminFetchOrders()
+  if (ordersError) return { data: [], error: ordersError }
 
-  const customersWithStats = stored.map(c => {
-    const customerOrders = orders.filter(o => {
-      if (o.customer_id && String(o.customer_id) === String(c.id)) return true
-      if (o.user_id && String(o.user_id) === String(c.id)) return true
-      if (o.customer_name && c.full_name && o.customer_name.trim().toLowerCase() === c.full_name.trim().toLowerCase()) return true
-      if (o.customer_phone && c.phone && o.customer_phone.replace(/\D/g, '') === c.phone.replace(/\D/g, '')) return true
+  const orders = Array.isArray(ordersData) ? ordersData : []
+  const customersWithStats = stored.map(customer => {
+    const customerOrders = orders.filter(order => {
+      if (order.customer_id != null && String(order.customer_id) === String(customer.id)) return true
+      if (order.user_id != null && String(order.user_id) === String(customer.id)) return true
+      if (order.customer_name && customer.full_name && order.customer_name.trim().toLowerCase() === customer.full_name.trim().toLowerCase()) return true
+      if (order.customer_phone && customer.phone && String(order.customer_phone).replace(/\D/g, '') === String(customer.phone).replace(/\D/g, '')) return true
       return false
     })
 
-    const validOrders = customerOrders.filter(o => o.status !== 'cancelled' && o.status !== 'refunded')
-    const totalSpend = validOrders.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0)
-    const latestOrder = [...customerOrders].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
+    const spendEligibleOrders = customerOrders.filter(order => {
+      const status = String(order.status || '').toLowerCase()
+      return status !== 'cancelled' && status !== 'refunded'
+    })
+    const totalSpend = spendEligibleOrders.reduce((sum, order) => {
+      const amount = Number(order.total_amount)
+      return sum + (Number.isFinite(amount) ? amount : 0)
+    }, 0)
+    const latestOrder = customerOrders.reduce((latest, order) => {
+      if (!order.created_at) return latest
+      if (!latest || new Date(order.created_at) > new Date(latest.created_at)) return order
+      return latest
+    }, null)
 
     return {
-      ...c,
+      ...customer,
       is_demo: true,
       order_count: customerOrders.length,
       total_spend: totalSpend,
-      last_order_at: latestOrder ? latestOrder.created_at : null,
+      last_order_at: latestOrder?.created_at || null,
     }
   })
 
   return { data: customersWithStats, error: null }
 }
 
-export async function adminFetchCustomerDetails(customerId) {
-  const { data: customers, error } = await adminFetchCustomers()
-  if (error || !customers) return { data: null, error: error || 'Customer not found' }
 
-  const customer = customers.find(c => String(c.id) === String(customerId))
+/**
+ * Promote an existing customer using the currently authenticated Supabase session.
+ * The database trigger and public.is_admin() remain the authority: this request
+ * succeeds only when the caller's JWT belongs to an active, OTP-verified admin session.
+ */
+export async function adminPromoteCustomerToAdmin(customerId) {
+  if (!shouldUseSupabaseClient()) {
+    return {
+      success: false,
+      error: new Error('Admin promotion is available only when connected to the ShopKart Supabase project.'),
+    }
+  }
+
+  if (!customerId || !isValidUUID(String(customerId))) {
+    return { success: false, error: new Error('A valid customer account ID is required.') }
+  }
+
+  try {
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+    if (sessionError) {
+      return { success: false, error: sessionError }
+    }
+    if (!sessionData?.session?.access_token) {
+      return { success: false, error: new Error('Your admin session has expired. Sign in again and complete admin OTP verification.') }
+    }
+
+    // Do not use the service-role key or bypass the trigger. The authenticated
+    // user's JWT is sent automatically by the Supabase client.
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ role: 'admin' })
+      .eq('id', customerId)
+      .eq('role', 'customer')
+      .select('id, role')
+      .maybeSingle()
+
+    if (error) {
+      return { success: false, error }
+    }
+    if (!data || data.role !== 'admin') {
+      return {
+        success: false,
+        error: new Error('No customer account was promoted. The account may already be an admin, may not exist, or your verified admin session may not have permission.'),
+      }
+    }
+
+    return { success: true, data }
+  } catch (err) {
+    return { success: false, error: err }
+  }
+}
+
+export async function adminFetchCustomerDetails(customerId) {
+  const { data: customers, error: customersError } = await adminFetchCustomers()
+  if (customersError || !Array.isArray(customers)) {
+    return { data: null, error: customersError || 'Customer not found' }
+  }
+
+  const customer = customers.find(item => String(item.id) === String(customerId))
   if (!customer) return { data: null, error: 'Customer not found' }
 
-  const { data: ordersData } = await adminFetchOrders()
-  const orders = Array.isArray(ordersData) ? ordersData : []
+  const { data: ordersData, error: ordersError } = await adminFetchOrders()
+  if (ordersError) return { data: null, error: ordersError }
 
-  const customerOrders = orders.filter(o => {
-    if (o.customer_id && String(o.customer_id) === String(customer.id)) return true
-    if (o.user_id && String(o.user_id) === String(customer.id)) return true
-    if (o.customer_name && customer.full_name && o.customer_name.trim().toLowerCase() === customer.full_name.trim().toLowerCase()) return true
-    if (o.customer_phone && customer.phone && o.customer_phone.replace(/\D/g, '') === customer.phone.replace(/\D/g, '')) return true
+  const orders = Array.isArray(ordersData) ? ordersData : []
+  const customerOrders = orders.filter(order => {
+    if (order.user_id != null && String(order.user_id) === String(customer.id)) return true
+    if (order.customer_id != null && String(order.customer_id) === String(customer.id)) return true
+
+    // Name/phone matching is only appropriate for local demo records, not live accounts.
+    if (!shouldUseSupabaseClient() && order.customer_name && customer.full_name &&
+        order.customer_name.trim().toLowerCase() === customer.full_name.trim().toLowerCase()) return true
+    if (!shouldUseSupabaseClient() && order.customer_phone && customer.phone &&
+        String(order.customer_phone).replace(/\D/g, '') === String(customer.phone).replace(/\D/g, '')) return true
     return false
-  }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  }).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
 
   return {
     data: {

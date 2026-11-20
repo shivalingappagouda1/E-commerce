@@ -563,7 +563,7 @@ export async function adminFetchOrders() {
         addresses ( full_name, phone, line1, line2, city, state, pincode ),
         order_items ( id, product_id, product_name, unit_price, quantity, total_price ),
         payments ( id, provider, status, amount, provider_payment_id, refund_reference, paid_at, updated_at ),
-        payment_submissions ( id, utr_number, status, admin_notes, reviewed_at, created_at )
+        payment_submissions ( id, utr_number, upi_id, status, admin_notes, reviewed_at, created_at )
       `)
       .order('created_at', { ascending: false })
 
@@ -1362,7 +1362,7 @@ export async function adminFetchPendingUtrSubmissions(client = supabase, configu
       const { data, error } = await client
         .from('payment_submissions')
         .select(`
-          id, order_id, payment_id, user_id, utr_number, status, admin_notes, created_at,
+          id, order_id, payment_id, user_id, utr_number, upi_id, status, admin_notes, created_at,
           orders ( id, total_amount, created_at, user_id, addresses ( full_name, phone ) )
         `)
         .eq('status', 'submitted')

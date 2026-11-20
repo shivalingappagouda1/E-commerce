@@ -63,6 +63,7 @@ export default function PhonePePaymentSection({
   configured,
 }) {
   const [utrInput, setUtrInput] = useState('')
+  const [upiIdInput, setUpiIdInput] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submissionError, setSubmissionError] = useState('')
   const [submissionSuccess, setSubmissionSuccess] = useState('')
@@ -145,6 +146,12 @@ export default function PhonePePaymentSection({
       return
     }
 
+    const cleanUpiId = upiIdInput.trim()
+    if (!/^[^\s@]+@[^\s@]+$/.test(cleanUpiId)) {
+      setSubmissionError('Enter a valid UPI ID (for example, name@bank).')
+      return
+    }
+
     const formatCheck = validateUtrFormat(utrInput)
     if (!formatCheck.isValid) {
       setSubmissionError(formatCheck.error || 'Invalid UTR format.')
@@ -166,6 +173,7 @@ export default function PhonePePaymentSection({
         {
           orderId: order.id,
           utrNumber: utrInput.trim(),
+          upiId: cleanUpiId,
         },
         client,
         configured
@@ -191,6 +199,7 @@ export default function PhonePePaymentSection({
           `UTR ${utrInput.trim()} submitted successfully! Your payment is now awaiting administrator verification.`
         )
         setUtrInput('')
+        setUpiIdInput('')
 
         if (typeof onUtrSubmitted === 'function') {
           onUtrSubmitted(submittedRecord)
@@ -310,8 +319,15 @@ export default function PhonePePaymentSection({
           <p className="text-[11px] text-amber-700 leading-relaxed">
             The previous UTR ({latestSub.utr_number}) was reviewed and rejected by the administrator.
             {latestSub.admin_notes && (
-              <span className="block mt-1 font-medium italic text-amber-900">
-                Reason: "{latestSub.admin_notes}"
+              <span className="block mt-1 font-medium text-amber-900">
+                {latestSub.admin_notes}
+              </span>
+            )}
+            {latestSub.admin_notes?.startsWith('The amount received is insufficient.') && (
+              <span className="block mt-2 rounded-xl border border-amber-200 bg-white p-3 text-amber-950 not-italic">
+                <strong className="block">Refund destination</strong>
+                <span className="block font-mono">{latestSub.upi_id || 'UPI ID not available for this older submission'}</span>
+                <span className="block mt-1">Our team will manually process the refund within 48 hours.</span>
               </span>
             )}
           </p>
@@ -511,6 +527,11 @@ export default function PhonePePaymentSection({
       {/* ── 12-Digit UTR Input Form (Available only within 48-hour deadline and when not under review) ── */}
       {!isPaymentCompleted && !isOrderCancelledOrExpired && !activeSub && !deadlineInfo.isExpired && (
         <form onSubmit={handleSubmitUtr} className="space-y-3 pt-2">
+          <div className="space-y-1.5">
+            <label className="block text-xs font-bold text-slate-800">Your UPI ID used for payment *</label>
+            <input type="text" value={upiIdInput} onChange={e => { setUpiIdInput(e.target.value); setSubmissionError('') }} disabled={isSubmitting} placeholder="e.g. yourname@okaxis" autoComplete="off" className="w-full text-sm p-3 rounded-2xl border border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 focus:outline-none" />
+            <p className="text-[11px] text-slate-400">This is your UPI ID (VPA), not the 12-digit UTR. It is used only if a refund is required.</p>
+          </div>
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-800">
               Enter 12-Digit UTR / UPI Reference Number *

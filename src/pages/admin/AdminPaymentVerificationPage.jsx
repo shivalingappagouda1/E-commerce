@@ -80,6 +80,10 @@ export default function AdminPaymentVerificationPage({
 
   // Form fields for actions
   const [rejectionReason, setRejectionReason] = useState('')
+  const UTR_REJECTION_REASONS = {
+    insufficient: 'The amount received is insufficient. Our team will manually refund the amount received to your submitted UPI ID within 48 hours.',
+    not_received: 'Your payment could not be verified, and no amount was received in our account. Please check your payment transaction before submitting again.',
+  }
   const [adminNotesInput, setAdminNotesInput] = useState('')
   const [refundReference, setRefundReference] = useState('')
   const [restockInventory, setRestockInventory] = useState(false)
@@ -315,9 +319,9 @@ export default function AdminPaymentVerificationPage({
       return
     }
 
-    const reason = rejectionReason.trim()
+    const reason = UTR_REJECTION_REASONS[rejectionReason]
     if (!reason) {
-      setActionError('A meaningful rejection reason is required so the customer can correct it.')
+      setActionError('Select one of the available rejection reasons.')
       return
     }
 
@@ -1288,16 +1292,17 @@ export default function AdminPaymentVerificationPage({
               <label className="block text-slate-800 font-bold">
                 Mandatory Rejection Reason *
               </label>
-              <textarea
-                rows={3}
-                value={rejectionReason}
-                onChange={e => setRejectionReason(e.target.value)}
-                placeholder="e.g. Transaction ID not found in PhonePe statement, or amount received does not match order total."
-                className="w-full p-2.5 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-red-500"
-              />
-              <p className="text-[10px] text-slate-400">
-                This explanation is displayed directly to the customer on their order confirmation page.
-              </p>
+              <div className="space-y-2">
+                <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 p-3 cursor-pointer">
+                  <input type="radio" name="rejectionReason" value="insufficient" checked={rejectionReason === 'insufficient'} onChange={e => setRejectionReason(e.target.value)} className="mt-0.5 accent-red-600" />
+                  <span className="leading-relaxed"><strong>Insufficient amount received</strong><span className="block text-slate-600 mt-1">The amount received is insufficient. Our team will manually refund the amount received to your submitted UPI ID within 48 hours.</span></span>
+                </label>
+                <label className="flex items-start gap-2.5 rounded-xl border border-slate-200 p-3 cursor-pointer">
+                  <input type="radio" name="rejectionReason" value="not_received" checked={rejectionReason === 'not_received'} onChange={e => setRejectionReason(e.target.value)} className="mt-0.5 accent-red-600" />
+                  <span className="leading-relaxed"><strong>No amount received</strong><span className="block text-slate-600 mt-1">Your payment could not be verified, and no amount was received in our account. Please check your payment transaction before submitting again.</span></span>
+                </label>
+              </div>
+              <p className="text-[10px] text-slate-400">The selected reason is saved in Supabase and displayed in the customer's account and order confirmation.</p>
             </div>
 
             <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-[11px] text-slate-600 space-y-1">
@@ -1324,7 +1329,7 @@ export default function AdminPaymentVerificationPage({
               </button>
               <button
                 type="submit"
-                disabled={isSubmittingAction || !rejectionReason.trim()}
+                disabled={isSubmittingAction || !rejectionReason}
                 className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold py-2.5 rounded-xl flex items-center justify-center gap-1.5 shadow-sm"
               >
                 {isSubmittingAction ? (

@@ -584,12 +584,18 @@ export async function placeOrder({
 export async function submitPhonepeUtr({
   orderId,
   utrNumber,
+  upiId,
 }, client = supabase, configured = isSupabaseConfigured) {
   if (!orderId) {
     return { data: null, error: { message: 'A valid order ID is required.' } }
   }
 
   const cleanUtr = typeof utrNumber === 'string' ? utrNumber.trim() : String(utrNumber || '').trim()
+  const cleanUpiId = typeof upiId === 'string' ? upiId.trim() : ''
+  if (!/^[^\s@]+@[^\s@]+$/.test(cleanUpiId)) {
+    return { data: null, error: { message: 'A valid UPI ID (VPA) is required.' } }
+  }
+
   if (!/^[0-9]{12}$/.test(cleanUtr)) {
     return {
       data: null,
@@ -607,11 +613,12 @@ export async function submitPhonepeUtr({
       return { data: null, error: { message: 'Authentication required to submit payment UTR.' } }
     }
 
-    // Call production 2-argument submit_phonepe_utr(UUID, TEXT)
+    // Call production 3-argument submit_phonepe_utr(UUID, TEXT, TEXT)
     // CRITICAL: NEVER pass a timestamp argument! The database function evaluates strictly using NOW().
     const { data, error } = await client.rpc('submit_phonepe_utr', {
       p_order_id: orderId,
       p_utr_number: cleanUtr,
+      p_upi_id: cleanUpiId,
     })
 
     if (error) {
@@ -624,7 +631,7 @@ export async function submitPhonepeUtr({
       }
     }
 
-    return { data, error: null }
+    return { data: data ? { ...data, id: data.id || data.submission_id, submission_id: data.submission_id || data.id, upi_id: data.upi_id || cleanUpiId } : data, error: null }
   }
 
   // Local Demo Fallback Mode
@@ -654,6 +661,7 @@ export async function submitPhonepeUtr({
     payment_id: order.payment?.id || `pay-${orderId}`,
     user_id: 'demo-user',
     utr_number: cleanUtr,
+    upi_id: cleanUpiId,
     status: 'submitted',
     admin_notes: null,
     reviewed_by: null,
@@ -665,9 +673,11 @@ export async function submitPhonepeUtr({
   return {
     data: {
       success: true,
+      id: newSubmission.id,
       submission_id: newSubmission.id,
       order_id: orderId,
       utr_number: cleanUtr,
+      upi_id: cleanUpiId,
       status: 'submitted',
       message: 'UTR submitted successfully. Pending administrator verification.',
     },
@@ -696,7 +706,7 @@ export async function fetchCustomerOrders(client = supabase, configured = isSupa
         addresses ( full_name, phone, line1, line2, city, state, pincode ),
         order_items ( id, product_id, product_name, unit_price, quantity, total_price ),
         payments ( id, provider, status, amount, provider_payment_id, refund_reference, paid_at, updated_at ),
-        payment_submissions ( id, utr_number, status, admin_notes, reviewed_at, created_at )
+        payment_submissions ( id, utr_number, upi_id, status, admin_notes, reviewed_at, created_at )
       `)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
@@ -764,7 +774,7 @@ export async function fetchOrderById(orderId, client = supabase, configured = is
         addresses ( full_name, phone, line1, line2, city, state, pincode ),
         order_items ( id, product_id, product_name, unit_price, quantity, total_price ),
         payments ( id, provider, status, amount, provider_payment_id, refund_reference, paid_at, updated_at ),
-        payment_submissions ( id, utr_number, status, admin_notes, reviewed_at, created_at )
+        payment_submissions ( id, utr_number, upi_id, status, admin_notes, reviewed_at, created_at )
       `)
       .eq('id', orderId)
       .single()

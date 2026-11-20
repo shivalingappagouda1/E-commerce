@@ -406,9 +406,16 @@ export default function OrdersPage({ initialOrders = null } = {}) {
                                 Previous UTR ({paymentInfo.latestSub?.utr_number}) Was Rejected
                               </p>
                               {paymentInfo.latestSub?.admin_notes && (
-                                <p className="text-[11px] text-amber-900 font-medium italic mt-0.5">
-                                  Rejection Reason: "{paymentInfo.latestSub.admin_notes}"
+                                <p className="text-[11px] text-amber-900 font-medium mt-0.5">
+                                  Rejection Reason: {paymentInfo.latestSub.admin_notes}
                                 </p>
+                              )}
+                              {paymentInfo.latestSub?.admin_notes?.startsWith('The amount received is insufficient.') && (
+                                <div className="mt-2 rounded-xl border border-amber-200 bg-white p-3 text-[11px] text-amber-950">
+                                  <strong className="block">Refund destination</strong>
+                                  <span className="block font-mono">{paymentInfo.latestSub.upi_id || 'UPI ID not available for this older submission'}</span>
+                                  <span className="block mt-1">Our team will manually process the refund within 48 hours.</span>
+                                </div>
                               )}
                               {paymentInfo.canResubmitUtr ? (
                                 <p className="text-[11px] text-amber-800 mt-1 leading-relaxed">

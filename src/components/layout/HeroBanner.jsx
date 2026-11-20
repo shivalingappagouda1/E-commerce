@@ -37,65 +37,89 @@ const DEFAULT_HERO_BANNERS = [
 ]
 
 export default function HeroBanner({ banners = [] }) {
-  const displayBanners = banners && banners.length > 0
+  const displayBanners = banners?.length
     ? banners
     : (!isSupabaseConfigured ? DEFAULT_HERO_BANNERS : [])
+
   const [current, setCurrent] = useState(0)
   const [paused, setPaused] = useState(false)
 
+  // Keep the selected index valid when banners are loaded or changed.
+  useEffect(() => {
+    setCurrent(index => (
+      displayBanners.length ? index % displayBanners.length : 0
+    ))
+  }, [displayBanners.length])
+
   const prev = useCallback(() => {
-    if (displayBanners.length === 0) return
-    setCurrent(c => (c - 1 + displayBanners.length) % displayBanners.length)
+    setCurrent(index => (
+      displayBanners.length
+        ? (index - 1 + displayBanners.length) % displayBanners.length
+        : 0
+    ))
   }, [displayBanners.length])
 
   const next = useCallback(() => {
-    if (displayBanners.length === 0) return
-    setCurrent(c => (c + 1) % displayBanners.length)
+    setCurrent(index => (
+      displayBanners.length
+        ? (index + 1) % displayBanners.length
+        : 0
+    ))
   }, [displayBanners.length])
 
   useEffect(() => {
-    if (paused || displayBanners.length <= 1) return
-    const id = setInterval(next, 5000)
-    return () => clearInterval(id)
+    if (paused || displayBanners.length <= 1) return undefined
+
+    const intervalId = window.setInterval(next, 5000)
+    return () => window.clearInterval(intervalId)
   }, [next, paused, displayBanners.length])
 
-  const safeCurrent = displayBanners.length > 0 ? current % displayBanners.length : 0
-  const banner = displayBanners[safeCurrent]
+  if (!displayBanners.length) return null
+
+  const banner = displayBanners[current]
   if (!banner) return null
 
   const bannerImage = banner.image || banner.image_url
   const bannerCtaLink = banner.ctaLink || banner.cta_link || '/'
   const bgFrom = banner.bg_from || banner.bgFrom
   const bgTo = banner.bg_to || banner.bgTo
+
   const bannerStyle = !banner.bgGradient && bgFrom && bgTo
     ? { background: `linear-gradient(135deg, ${bgFrom} 0%, ${bgTo} 100%)` }
     : undefined
+
   const isExternalLink = /^https?:\/\//i.test(bannerCtaLink)
 
   return (
     <div
-      className="relative overflow-hidden rounded-3xl shadow-md border border-slate-800/20 group"
+      className="relative isolate overflow-hidden rounded-3xl shadow-md border border-slate-800/20 group"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      {/* Banner Slide */}
+      {/* Banner slide */}
       <div
-        className={`relative w-full min-h-[320px] sm:min-h-[380px] md:min-h-[440px] ${bannerStyle ? '' : `bg-gradient-to-r ${banner.bgGradient || 'from-slate-950 to-brand-950'}`} flex items-center`}
+        className={`relative w-full min-h-[320px] sm:min-h-[380px] md:min-h-[440px] ${
+          bannerStyle
+            ? ''
+            : `bg-gradient-to-r ${banner.bgGradient || 'from-slate-950 to-brand-950'}`
+        } flex items-center`}
         style={bannerStyle}
       >
-        {/* Background lifestyle image with subtle gradient overlay */}
+        {/* Decorative image layer must never intercept carousel clicks. */}
         {bannerImage && (
-          <div className="absolute right-0 top-0 bottom-0 w-full sm:w-3/5 opacity-35 sm:opacity-50 overflow-hidden mix-blend-luminosity">
+          <div className="pointer-events-none absolute inset-0 sm:left-auto sm:w-3/5 opacity-35 sm:opacity-50 overflow-hidden mix-blend-luminosity">
             <img
               src={bannerImage}
-              alt={banner.title}
+              alt=""
+              aria-hidden="true"
+              draggable="false"
               className="w-full h-full object-cover object-center transform scale-105 group-hover:scale-100 transition-transform duration-1000 ease-out"
             />
-            <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-transparent to-transparent sm:via-slate-950/40" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-slate-950 via-transparent to-transparent sm:via-slate-950/40" />
           </div>
         )}
 
-        {/* Content Block */}
+        {/* Content */}
         <div className="relative z-10 max-w-xl px-6 sm:px-12 md:px-16 py-10 text-white space-y-4">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-bold text-amber-300">
             <Sparkles size={13} className="text-amber-400" />
@@ -136,37 +160,46 @@ export default function HeroBanner({ banners = [] }) {
         </div>
       </div>
 
-      {/* Navigation Arrow Controls */}
+      {/* Carousel controls sit above every decorative/content layer. */}
       {displayBanners.length > 1 && (
         <>
           <button
+            type="button"
             onClick={prev}
-            className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/40 hover:bg-black/70 text-white border border-white/10 opacity-0 group-hover:opacity-100 transition-all duration-200 cursor-pointer"
-            aria-label="Previous slide"
+            className="absolute z-30 left-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-black/50 hover:bg-black/75 text-white border border-white/20 shadow-lg opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white transition-all duration-200 cursor-pointer pointer-events-auto"
+            aria-label="Previous banner"
+            title="Previous banner"
           >
-            <ChevronLeft size={20} />
+            <ChevronLeft size={22} />
           </button>
+
           <button
+            type="button"
             onClick={next}
-            className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/40 hover:bg-black/70 text-white border border-white/10 opacity-0 group-hover:opacity-100 transition-all duration-200 cursor-pointer"
-            aria-label="Next slide"
+            className="absolute z-30 right-3 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-black/50 hover:bg-black/75 text-white border border-white/20 shadow-lg opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white transition-all duration-200 cursor-pointer pointer-events-auto"
+            aria-label="Next banner"
+            title="Next banner"
           >
-            <ChevronRight size={20} />
+            <ChevronRight size={22} />
           </button>
         </>
       )}
 
-      {/* Indicator Dots */}
+      {/* Slide indicators */}
       {displayBanners.length > 1 && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 z-20">
-          {displayBanners.map((_, i) => (
+        <div className="absolute z-30 bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
+          {displayBanners.map((item, index) => (
             <button
-              key={i}
-              onClick={() => setCurrent(i)}
+              key={item.id || index}
+              type="button"
+              onClick={() => setCurrent(index)}
               className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
-                i === current ? 'w-8 bg-brand-400' : 'w-2 bg-white/40 hover:bg-white/70'
+                index === current
+                  ? 'w-8 bg-brand-400'
+                  : 'w-2 bg-white/50 hover:bg-white/80'
               }`}
-              aria-label={`Go to slide ${i + 1}`}
+              aria-label={`Go to banner ${index + 1}`}
+              aria-current={index === current ? 'true' : undefined}
             />
           ))}
         </div>

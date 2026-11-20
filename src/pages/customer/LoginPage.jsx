@@ -30,6 +30,8 @@ export default function LoginPage() {
       const result = await signIn({ email: email.trim(), password })
       if (result.error) {
         setError(result.error.message || 'Unable to sign in.')
+      } else if (result.requiresAccountRestore) {
+        navigate('/account/restore', { replace: true })
       } else if (result.requiresAdminOtp) {
         navigate('/admin/verify', { replace: true })
       } else {

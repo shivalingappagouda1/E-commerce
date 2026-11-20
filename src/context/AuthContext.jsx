@@ -32,6 +32,7 @@ export function AuthProvider({ children }) {
   const [adminOtpRequired, setAdminOtpRequired] = useState(false)
   const [adminOtpLoading, setAdminOtpLoading] = useState(false)
   const [adminOtpError, setAdminOtpError] = useState('')
+  const [accountLifecycle, setAccountLifecycle] = useState({ status: 'active', deletionScheduledFor: null, error: '' })
 
   const activeUserIdRef = useRef(null)
   const profileFetchSeqRef = useRef(0)
@@ -42,6 +43,18 @@ export function AuthProvider({ children }) {
 
   const safeProfile = resolveScopedProfile(user, profileState)
   const isAdmin = resolveIsAdmin(user, safeProfile)
+
+  async function invokeAccountLifecycle(session, action, extra = {}) {
+    if (!supabase) throw new Error('Supabase is not configured.')
+    if (!session?.access_token) throw new Error('Your login session has expired. Please sign in again.')
+    const { data, error } = await supabase.functions.invoke('account-lifecycle', {
+      body: { action, ...extra },
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+    if (error) throw error
+    if (data?.error) throw new Error(data.error)
+    return data
+  }
 
   async function invokeAdminOtp(session, action, extra = {}) {
     if (!supabase) throw new Error('Supabase is not configured.')
@@ -154,6 +167,24 @@ export function AuthProvider({ children }) {
     const currentSeq = ++profileFetchSeqRef.current
     try {
       if (!supabase) return { data: null, error: null }
+      let activeSession = session
+      if (!activeSession) {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError) throw sessionError
+        activeSession = sessionData?.session
+      }
+      if (activeSession?.access_token) {
+        const lifecycle = await invokeAccountLifecycle(activeSession, 'status')
+        if (!mountedRef.current || !shouldAcceptProfileResponse(currentSeq, profileFetchSeqRef.current, activeUserIdRef.current, userId)) {
+          return { data: null, error: null, stale: true }
+        }
+        setAccountLifecycle({ status: lifecycle.status || 'active', deletionScheduledFor: lifecycle.deletionScheduledFor || null, error: '' })
+        if (lifecycle.status === 'pending_deletion' || lifecycle.status === 'deleting') {
+          setProfileState({ ownerId: userId, data: null })
+          if (mountedRef.current && activeUserIdRef.current === userId) setLoading(false)
+          return { data: null, error: null, lifecycleStatus: lifecycle.status }
+        }
+      }
       const { data, error } = await supabase
         .from('profiles')
         .select('id, full_name, avatar_url, role, phone')
@@ -180,6 +211,7 @@ export function AuthProvider({ children }) {
     } catch (error) {
       if (!mountedRef.current) return { data: null, error: null }
       if (shouldAcceptProfileResponse(currentSeq, profileFetchSeqRef.current, activeUserIdRef.current, userId)) {
+        setAccountLifecycle(current => ({ ...current, error: error?.message || 'Unable to verify account status.' }))
         setProfileState({ ownerId: userId, data: null })
       }
       if (mountedRef.current && activeUserIdRef.current === userId) setLoading(false)
@@ -274,6 +306,7 @@ export function AuthProvider({ children }) {
         setAdminOtpRequired(false)
         setAdminOtpLoading(false)
         setAdminOtpError('')
+        setAccountLifecycle({ status: 'active', deletionScheduledFor: null, error: '' })
         otpSessionRef.current = null
         otpInitPromisesRef.current.clear()
       } else if (previousId !== currentId || event === 'SIGNED_IN' || event === 'USER_UPDATED') {
@@ -308,18 +341,33 @@ export function AuthProvider({ children }) {
     setRecoveryMode(false)
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error || !data?.session) return { data, error }
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, full_name, avatar_url, role, phone')
-      .eq('id', data.user.id)
-      .single()
-    if (profileError) return { data, error: profileError }
-    if (mountedRef.current && activeUserIdRef.current === data.user.id) {
-      setProfileState({ ownerId: data.user.id, data: profile })
+    try {
+      const lifecycle = await invokeAccountLifecycle(data.session, 'status')
+      if (mountedRef.current && activeUserIdRef.current === data.user.id) {
+        setAccountLifecycle({ status: lifecycle.status || 'active', deletionScheduledFor: lifecycle.deletionScheduledFor || null, error: '' })
+      }
+      if (lifecycle.status === 'pending_deletion' || lifecycle.status === 'deleting') {
+        if (mountedRef.current && activeUserIdRef.current === data.user.id) {
+          setProfileState({ ownerId: data.user.id, data: null })
+          setLoading(false)
+        }
+        return { data, error: null, requiresAccountRestore: true }
+      }
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles').select('id, full_name, avatar_url, role, phone')
+        .eq('id', data.user.id).single()
+      if (profileError) return { data, error: profileError }
+      if (mountedRef.current && activeUserIdRef.current === data.user.id) setProfileState({ ownerId: data.user.id, data: profile })
+      await ensureAdminOtpForSession(data.session, profile)
+      if (mountedRef.current && activeUserIdRef.current === data.user.id) setLoading(false)
+      return { data, error: null, requiresAdminOtp: profile?.role === 'admin' }
+    } catch (lifecycleError) {
+      if (mountedRef.current && activeUserIdRef.current === data.user.id) {
+        setAccountLifecycle(current => ({ ...current, error: lifecycleError?.message || 'Unable to verify account status.' }))
+        setLoading(false)
+      }
+      return { data, error: lifecycleError }
     }
-    await ensureAdminOtpForSession(data.session, profile)
-    if (mountedRef.current && activeUserIdRef.current === data.user.id) setLoading(false)
-    return { data, error: null, requiresAdminOtp: profile?.role === 'admin' }
   }
 
   async function signInWithGoogle() {
@@ -344,6 +392,7 @@ export function AuthProvider({ children }) {
     setAdminOtpRequired(false)
     setAdminOtpLoading(false)
     setAdminOtpError('')
+    setAccountLifecycle({ status: 'active', deletionScheduledFor: null, error: '' })
     if (!supabase) return { error: null }
     try {
       const { error } = await supabase.auth.signOut()
@@ -374,6 +423,8 @@ export function AuthProvider({ children }) {
       adminOtpRequired,
       adminOtpLoading,
       adminOtpError,
+      accountLifecycle,
+      invokeAccountLifecycle,
       signUp,
       verifyEmailOtp,
       resendEmailOtp,

@@ -25,6 +25,7 @@ const ProfilePage = lazy(() => import('../pages/customer/ProfilePage'))
 const ForgotPasswordPage = lazy(() => import('../pages/customer/ForgotPasswordPage'))
 const ResetPasswordPage = lazy(() => import('../pages/customer/ResetPasswordPage'))
 const AdminOtpPage = lazy(() => import('../pages/customer/AdminOtpPage'))
+const AccountRestorePage = lazy(() => import('../pages/customer/AccountRestorePage'))
 const PlaceholderPage = lazy(() => import('../pages/customer/PlaceholderPage'))
 const NotFoundPage = lazy(() => import('../pages/customer/NotFoundPage'))
 
@@ -51,27 +52,76 @@ function RouteLoadingFallback() {
   )
 }
 
-// Google OAuth returns to "/". Route administrators to OTP before showing
-// the normal store homepage; customers continue to see the homepage unchanged.
+/**
+ * The root route is the storefront for both customers and verified admins.
+ * Admins who still need OTP verification are sent to the verification page.
+ * Once verified, admins can browse the store without being redirected back
+ * to the admin dashboard.
+ */
 function StoreHomeRoute() {
-  const { user, loading, isAdmin, adminOtpVerified, adminOtpRequired } = useAuth()
+  const {
+    user,
+    loading,
+    isAdmin,
+    adminOtpVerified,
+    adminOtpRequired,
+    accountLifecycle,
+  } = useAuth()
+
   if (loading) return <RouteLoadingFallback />
+
+  if (user && accountLifecycle.status !== 'active') {
+    return <Navigate to="/account/restore" replace />
+  }
+
+  if (user && accountLifecycle.error) {
+    return (
+      <div className="p-8 text-center text-red-600">
+        Unable to verify account status. Please refresh or try again.
+      </div>
+    )
+  }
+
+  // Enforce admin OTP verification without forcing verified admins
+  // back into the admin dashboard when they intentionally visit the store.
   if (user && isAdmin && !adminOtpVerified && adminOtpRequired) {
     return <Navigate to="/admin/verify" replace />
   }
+
   return <HomePage />
+}
+
+function CustomerAccessGate({ children }) {
+  const { user, loading, accountLifecycle } = useAuth()
+
+  if (loading) return <RouteLoadingFallback />
+
+  if (user && accountLifecycle.status !== 'active') {
+    return <Navigate to="/account/restore" replace />
+  }
+
+  if (user && accountLifecycle.error) {
+    return (
+      <div className="min-h-[50vh] grid place-items-center p-8 text-center text-red-600">
+        Unable to verify account status. Please refresh or try again.
+      </div>
+    )
+  }
+
+  return children
 }
 
 export default function AppRoutes() {
   return (
     <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
-        {/* Admin OTP route is deliberately outside both layouts. */}
+        {/* Security routes are outside the customer layout so pending users can restore. */}
         <Route path="/admin/verify" element={<AdminOtpPage />} />
+        <Route path="/account/restore" element={<AccountRestorePage />} />
 
-        {/* Customer routes */}
-        <Route element={<CustomerLayout />}>
-          <Route index element={<StoreHomeRoute />} />\n          <Route path="customer" element={<StoreHomeRoute />} />
+        {/* Customer storefront routes */}
+        <Route element={<CustomerAccessGate><CustomerLayout /></CustomerAccessGate>}>
+          <Route index element={<StoreHomeRoute />} />
           <Route path="category/:slug" element={<CategoryPage />} />
           <Route path="product/:slug" element={<ProductDetailPage />} />
           <Route path="search" element={<SearchPage />} />
@@ -103,7 +153,7 @@ export default function AppRoutes() {
           <Route path="*" element={<NotFoundPage />} />
         </Route>
 
-        {/* Admin routes: OTP is checked before AdminLayout is rendered. */}
+        {/* Admin routes remain protected by AuthGuard and admin OTP checks. */}
         <Route path="/admin" element={<AuthGuard requireAdmin><AdminLayout /></AuthGuard>}>
           <Route index element={<AdminDashboard />} />
           <Route path="products" element={<AdminProductsPage />} />

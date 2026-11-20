@@ -6,6 +6,7 @@ import {
   Save, X, Star, Upload, Loader2
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import AccountDeletionPanel from '../../components/account/AccountDeletionPanel'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import {
   validateAvatarFile,
@@ -869,6 +870,7 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
+      {!isAdmin && <AccountDeletionPanel />}
     </div>
   )
 }

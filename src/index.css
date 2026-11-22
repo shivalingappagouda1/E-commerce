@@ -82,3 +82,88 @@ body {
 ::-webkit-scrollbar-track { background: #f1f5f9; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+
+/* =========================================================
+   SHOPKART OCEAN BLUE COLLECTION
+   Scoped ONLY to Featured Products, Top Rated & Tagged Picks.
+   ========================================================= */
+.product-card.product-card--ocean-blue {
+  --card-bg: #195B87;
+  --card-border: #2B719D;
+  --card-border-hover: #0F3F61;
+  --card-title: #FFFFFF;
+  --card-muted: #D0E1ED;
+  --card-price: #FFFFFF;
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(155deg, #216A99 0%, #195B87 58%, #123B5A 100%);
+  color: #FFFFFF;
+  border: 1px solid #2B719D;
+  border-radius: 20px;
+  box-shadow: 0 12px 28px rgb(15 63 97 / 18%), inset 0 1px 0 rgb(255 255 255 / 12%);
+  transition: transform .24s ease, box-shadow .24s ease, border-color .24s ease;
+}
+.product-card.product-card--ocean-blue::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  z-index: 2;
+  background: linear-gradient(90deg, #69A9D1, #D7EAF7 48%, #4385AD);
+  opacity: .95;
+}
+.product-card.product-card--ocean-blue:hover {
+  transform: translateY(-5px);
+  border-color: #69A9D1;
+  box-shadow: 0 20px 38px rgb(15 63 97 / 24%), 0 0 0 1px rgb(105 169 209 / 20%), inset 0 1px 0 rgb(255 255 255 / 16%);
+}
+.product-card.product-card--ocean-blue .product-card__image {
+  background: linear-gradient(145deg, #F7FBFE 0%, #E4F0F8 100%);
+  border-bottom: 1px solid #B9D3E5;
+  padding: 18px;
+}
+.product-card.product-card--ocean-blue .product-card__image img {
+  filter: drop-shadow(0 8px 9px rgb(18 59 90 / 10%));
+}
+.product-card.product-card--ocean-blue .product-card__content {
+  background: linear-gradient(155deg, #216A99 0%, #195B87 58%, #123B5A 100%);
+  color: #FFFFFF;
+  padding: 17px;
+  gap: 9px;
+}
+.product-card.product-card--ocean-blue .product-card__category,
+.product-card.product-card--ocean-blue .product-card__reviews,
+.product-card.product-card--ocean-blue .product-card__original-price { color: #D0E1ED; }
+.product-card.product-card--ocean-blue .product-card__title,
+.product-card.product-card--ocean-blue .product-card__price { color: #FFFFFF; }
+.product-card.product-card--ocean-blue .product-card__title { font-weight: 700; letter-spacing: -.01em; }
+.product-card.product-card--ocean-blue .product-card__title:hover { color: #D7EAF7; }
+.product-card.product-card--ocean-blue .product-card__price { font-size: 1.15rem; letter-spacing: -.02em; }
+.product-card.product-card--ocean-blue .product-card__quantity {
+  background: rgb(8 30 47 / 30%);
+  border: 1px solid #4385AD;
+}
+.product-card.product-card--ocean-blue .product-card__quantity-label { color: #FFFFFF; }
+.product-card.product-card--ocean-blue .product-card__quantity button:last-child {
+  background: #4385AD; color: #fff; border-color: #4385AD;
+}
+.product-card.product-card--ocean-blue .product-card__quantity button:last-child:hover { background: #2B719D; }
+.product-card.product-card--ocean-blue button.bg-brand-500 {
+  background: linear-gradient(135deg, #4385AD, #195B87);
+  color: #fff;
+  border: 1px solid rgb(255 255 255 / 18%);
+  box-shadow: 0 5px 14px rgb(8 30 47 / 20%);
+}
+.product-card.product-card--ocean-blue button.bg-brand-500:hover {
+  background: linear-gradient(135deg, #69A9D1, #2B719D);
+  box-shadow: 0 8px 18px rgb(8 30 47 / 25%);
+}
+.product-card.product-card--ocean-blue button:focus-visible { outline: 2px solid #D7EAF7; outline-offset: 3px; }
+@media (max-width: 640px) {
+  .product-card.product-card--ocean-blue .product-card__content { padding: 13px; }
+  .product-card.product-card--ocean-blue .product-card__image { padding: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .product-card.product-card--ocean-blue { transition: none; }
+}

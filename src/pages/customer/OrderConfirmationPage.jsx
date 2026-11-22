@@ -226,114 +226,11 @@ export default function OrderConfirmationPage({
   const address = order?.address || order?.addresses || null
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-12 space-y-8">
-      {/* ── Status Hero ── */}
-      <div className="bg-white rounded-3xl border border-slate-100 p-8 sm:p-12 text-center shadow-sm space-y-4">
-        <div
-          className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto shadow-sm ${
-            isPaymentUnavailable
-              ? 'bg-amber-100 text-amber-600'
-              : isCancelled
-              ? 'bg-red-100 text-red-600'
-              : isRefunded
-              ? 'bg-slate-200 text-slate-700'
-              : isPhonePe && !isPaymentCompleted
-              ? 'bg-purple-100 text-purple-600'
-              : 'bg-green-100 text-green-600'
-          }`}
-        >
-          {isPaymentUnavailable ? (
-            <AlertCircle size={36} />
-          ) : isCancelled ? (
-            <XCircle size={36} />
-          ) : isRefunded ? (
-            <RotateCcw size={34} />
-          ) : isPhonePe && !isPaymentCompleted ? (
-            <QrCode size={34} />
-          ) : (
-            <CheckCircle2 size={36} />
-          )}
-        </div>
-
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">
-          {isPaymentUnavailable
-            ? 'Payment Status Unavailable'
-            : isCancelled
-            ? 'Order Cancelled'
-            : isRefunded
-            ? 'Order Payment Refunded'
-            : isPhonePe && !isPaymentCompleted
-            ? 'Order Placed — Complete UPI Payment'
-            : 'Order Placed Successfully!'}
-        </h1>
-
-        <p className="text-sm text-slate-500 max-w-md mx-auto">
-          {isPaymentUnavailable
-            ? 'We were unable to verify the authoritative payment status for this order. Please retry using the button below.'
-            : isCancelled
-            ? 'This order has been cancelled.'
-            : isRefunded
-            ? 'The payment for this order has been refunded. The transaction has been credited to your payment method.'
-            : isPhonePe && !isPaymentCompleted
-            ? 'Your order has been placed. Please complete your PhonePe UPI payment and submit your 12-digit UTR for administrator verification.'
-            : "Thank you for shopping with ShopKart. We've received your order and are getting it ready for delivery."}
-        </p>
-
-        <div className="inline-block bg-slate-50 border border-slate-200 rounded-xl px-5 py-2.5 text-xs text-slate-700">
-          <span>Order ID: </span>
-          <strong className="text-slate-900 font-mono text-sm ml-1">#{effectiveOrderId}</strong>
-        </div>
-      </div>
-
-      {/* ── Payment Retrieval Error Alert (if fetchOrderPayment failed) ── */}
-      {paymentError && (
-        <div className="bg-amber-50 border border-amber-300 rounded-2xl p-5 text-xs text-amber-950 space-y-3 shadow-xs">
-          <div className="flex items-center gap-2 font-bold text-sm text-amber-900">
-            <AlertCircle size={20} className="text-amber-600 flex-shrink-0" />
-            <span>Payment Status Retrieval Error</span>
-          </div>
-          <p className="text-amber-800 leading-relaxed text-[11px]">
-            We were unable to retrieve the latest payment verification details for this order ({paymentError}). Payment submission and verification actions are temporarily disabled to prevent unverified submissions.
-          </p>
-          <button
-            type="button"
-            onClick={(e) => {
-              const p = loadOrderData()
-              if (e?.currentTarget) e.currentTarget._lastPromise = p
-              return p
-            }}
-            disabled={isRetryingPayment}
-            className="inline-flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition-colors shadow-xs cursor-pointer"
-          >
-            <RotateCcw size={13} className={isRetryingPayment ? 'animate-spin' : ''} />
-            <span>{isRetryingPayment ? 'Verifying Payment...' : 'Retry Payment Status Check'}</span>
-          </button>
-        </div>
-      )}
-
-      {/* ── Refund Notice Banner (Refunded Orders) ── */}
-      {isRefunded && (
-        <div className="bg-slate-50 border border-slate-300 rounded-2xl p-5 text-xs text-slate-800 space-y-2 shadow-xs">
-          <div className="flex items-center gap-2 font-bold text-sm text-slate-950">
-            <RotateCcw size={20} className="text-slate-700 flex-shrink-0" />
-            <span>Refund Processed & Credited</span>
-          </div>
-          <p className="text-slate-700 leading-relaxed text-[11px]">
-            The payment of <strong>{formatPrice(financials.totalAmount)}</strong> has been refunded to your source payment account.
-          </p>
-          <div className="pt-1.5 border-t border-slate-200 font-mono text-[11px] text-slate-700">
-            {refundRef ? (
-              <>
-                Bank / Gateway Reference ID: <strong className="text-slate-950 font-bold">{refundRef}</strong>
-              </>
-            ) : (
-              <span className="text-slate-500 italic">Reference ID has not been provided yet</span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Payment Section: PhonePe QR & UTR Component vs COD Instructions (Strictly hidden whenever isPaymentUnavailable) ── */}
+    <main className="min-h-[calc(100vh-120px)] w-full bg-[radial-gradient(ellipse_at_top_left,_#fff7ed_0%,_transparent_35%),radial-gradient(ellipse_at_bottom_right,_#dbeafe_0%,_transparent_40%),#f8fafc]">
+      <div className="w-full max-w-[1280px] mx-auto px-4 sm:px-5 xl:px-6 py-5 lg:py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.96fr)] gap-3.5 xl:gap-4 items-start">
+          <section className="min-w-0 space-y-3">
+            {/* ── Payment Section: PhonePe QR & UTR Component vs COD Instructions (Strictly hidden whenever isPaymentUnavailable) ── */}
       {!isPaymentUnavailable && (
         <>
           {isPhonePe && !isCancelled && !isRefunded && (
@@ -380,7 +277,8 @@ export default function OrderConfirmationPage({
         </>
       )}
 
-      {/* ── When Payment Fetch Failed or Status Unavailable for COD: display unverified notice ── */}
+      
+            {/* ── When Payment Fetch Failed or Status Unavailable for COD: display unverified notice ── */}
       {isCod && isPaymentUnavailable && (
         <div className="bg-white rounded-3xl border border-slate-100 p-6 sm:p-8 shadow-sm space-y-3">
           <div className="flex items-center gap-3">
@@ -403,24 +301,136 @@ export default function OrderConfirmationPage({
         </div>
       )}
 
-      {/* Details Grid: Estimated Delivery & Address */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      
+          </section>
+          <section className="min-w-0 space-y-3">
+            {/* ── Status Hero ── */}
+      <div className="bg-gradient-to-br from-sky-50 via-white to-blue-100 rounded-2xl border border-sky-100 p-5 sm:p-6 text-center shadow-[0_8px_22px_rgba(30,64,110,0.08)] space-y-2.5">
+        <div
+          className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto shadow-sm ${
+            isPaymentUnavailable
+              ? 'bg-amber-100 text-amber-600'
+              : isCancelled
+              ? 'bg-red-100 text-red-600'
+              : isRefunded
+              ? 'bg-slate-200 text-slate-700'
+              : isPhonePe && !isPaymentCompleted
+              ? 'bg-purple-100 text-purple-600'
+              : 'bg-green-100 text-green-600'
+          }`}
+        >
+          {isPaymentUnavailable ? (
+            <AlertCircle size={28} />
+          ) : isCancelled ? (
+            <XCircle size={28} />
+          ) : isRefunded ? (
+            <RotateCcw size={26} />
+          ) : isPhonePe && !isPaymentCompleted ? (
+            <QrCode size={26} />
+          ) : (
+            <CheckCircle2 size={28} />
+          )}
+        </div>
+
+        <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900">
+          {isPaymentUnavailable
+            ? 'Payment Status Unavailable'
+            : isCancelled
+            ? 'Order Cancelled'
+            : isRefunded
+            ? 'Order Payment Refunded'
+            : isPhonePe && !isPaymentCompleted
+            ? 'Order Placed — Complete UPI Payment'
+            : 'Order Placed Successfully!'}
+        </h1>
+
+        <p className="text-xs text-slate-600 max-w-md mx-auto">
+          {isPaymentUnavailable
+            ? 'We were unable to verify the authoritative payment status for this order. Please retry using the button below.'
+            : isCancelled
+            ? 'This order has been cancelled.'
+            : isRefunded
+            ? 'The payment for this order has been refunded. The transaction has been credited to your payment method.'
+            : isPhonePe && !isPaymentCompleted
+            ? 'Your order has been placed. Please complete your PhonePe UPI payment and submit your 12-digit UTR for administrator verification.'
+            : "Thank you for shopping with ShopKart. We've received your order and are getting it ready for delivery."}
+        </p>
+
+        <div className="inline-block bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-[11px] text-slate-700">
+          <span>Order ID: </span>
+          <strong className="text-slate-900 font-mono text-sm ml-1">#{effectiveOrderId}</strong>
+        </div>
+      </div>
+
+      
+            {/* ── Payment Retrieval Error Alert (if fetchOrderPayment failed) ── */}
+      {paymentError && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3.5 text-xs text-amber-950 space-y-3 shadow-xs">
+          <div className="flex items-center gap-2 font-bold text-sm text-amber-900">
+            <AlertCircle size={20} className="text-amber-600 flex-shrink-0" />
+            <span>Payment Status Retrieval Error</span>
+          </div>
+          <p className="text-amber-800 leading-relaxed text-[11px]">
+            We were unable to retrieve the latest payment verification details for this order ({paymentError}). Payment submission and verification actions are temporarily disabled to prevent unverified submissions.
+          </p>
+          <button
+            type="button"
+            onClick={(e) => {
+              const p = loadOrderData()
+              if (e?.currentTarget) e.currentTarget._lastPromise = p
+              return p
+            }}
+            disabled={isRetryingPayment}
+            className="inline-flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white font-bold text-xs px-3.5 py-2 rounded-xl transition-colors shadow-xs cursor-pointer"
+          >
+            <RotateCcw size={13} className={isRetryingPayment ? 'animate-spin' : ''} />
+            <span>{isRetryingPayment ? 'Verifying Payment...' : 'Retry Payment Status Check'}</span>
+          </button>
+        </div>
+      )}
+
+      
+            {/* ── Refund Notice Banner (Refunded Orders) ── */}
+      {isRefunded && (
+        <div className="bg-slate-50 border border-slate-300 rounded-xl p-3.5 text-xs text-slate-800 space-y-2 shadow-xs">
+          <div className="flex items-center gap-2 font-bold text-sm text-slate-950">
+            <RotateCcw size={20} className="text-slate-700 flex-shrink-0" />
+            <span>Refund Processed & Credited</span>
+          </div>
+          <p className="text-slate-700 leading-relaxed text-[11px]">
+            The payment of <strong>{formatPrice(financials.totalAmount)}</strong> has been refunded to your source payment account.
+          </p>
+          <div className="pt-1.5 border-t border-slate-200 font-mono text-[11px] text-slate-700">
+            {refundRef ? (
+              <>
+                Bank / Gateway Reference ID: <strong className="text-slate-950 font-bold">{refundRef}</strong>
+              </>
+            ) : (
+              <span className="text-slate-500 italic">Reference ID has not been provided yet</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      
+            {/* Details Grid: Estimated Delivery & Address */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Estimated Delivery */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-start gap-4">
-          <div className="p-3 bg-brand-50 text-brand-600 rounded-xl">
-            <Calendar size={24} />
+        <div className="bg-white p-3.5 rounded-2xl border border-sky-100 shadow-sm flex items-start gap-3">
+          <div className="p-2.5 bg-orange-50 text-orange-600 rounded-xl">
+            <Calendar size={19} />
           </div>
           <div className="space-y-1 text-xs">
             <p className="font-semibold text-slate-400 uppercase tracking-wide">Estimated Delivery</p>
-            <p className="text-base font-bold text-slate-800">{formattedDeliveryDate}</p>
+            <p className="text-sm font-bold text-slate-800">{formattedDeliveryDate}</p>
             <p className="text-slate-500">Standard Delivery by 9:00 PM</p>
           </div>
         </div>
 
         {/* Delivery Address */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-start gap-4">
-          <div className="p-3 bg-brand-50 text-brand-600 rounded-xl">
-            <MapPin size={24} />
+        <div className="bg-white p-3.5 rounded-2xl border border-sky-100 shadow-sm flex items-start gap-3">
+          <div className="p-2.5 bg-orange-50 text-orange-600 rounded-xl">
+            <MapPin size={19} />
           </div>
           <div className="space-y-1 text-xs">
             <p className="font-semibold text-slate-400 uppercase tracking-wide">Delivering To</p>
@@ -441,19 +451,20 @@ export default function OrderConfirmationPage({
         </div>
       </div>
 
-      {/* Items & Financial Breakdown Summary */}
+      
+            {/* Items & Financial Breakdown Summary */}
       {items.length > 0 && (
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
-          <h2 className="font-bold text-slate-800 text-sm border-b border-slate-100 pb-3 flex items-center gap-2">
+        <div className="bg-white p-4 rounded-2xl border border-sky-100 shadow-sm space-y-3">
+          <h2 className="font-bold text-slate-800 text-sm border-b border-slate-100 pb-2 flex items-center gap-2">
             <Package size={16} className="text-brand-500" /> Items in this Order ({items.length})
           </h2>
 
           <div className="space-y-3">
             {items.map((item, idx) => (
-              <div key={item.id || idx} className="flex items-center justify-between text-xs py-2 border-b border-slate-50 last:border-none">
+              <div key={item.id || idx} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-50 last:border-none">
                 <div className="flex items-center gap-3">
                   {item.image && (
-                    <img src={item.image} alt={item.product_name} className="w-10 h-10 object-contain rounded bg-slate-50 p-1" />
+                    <img src={item.image} alt={item.product_name} className="w-11 h-11 object-contain rounded-lg bg-sky-50 p-1" />
                   )}
                   <div>
                     <p className="font-semibold text-slate-800">{item.product_name}</p>
@@ -509,27 +520,31 @@ export default function OrderConfirmationPage({
                   ? 'Total Payable'
                   : 'Total Paid'}
               </span>
-              <span className="text-brand-600 text-base font-black">{formatPrice(financials.totalAmount)}</span>
+              <span className="text-orange-600 text-base font-black">{formatPrice(financials.totalAmount)}</span>
             </div>
           </div>
         </div>
       )}
 
-      {/* Action Buttons */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-center">
+      
+            {/* Action Buttons */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         <Link
           to="/orders"
-          className="bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs py-3 px-6 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm"
+          className="bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm text-xs"
         >
           <Package size={16} /> View My Orders
         </Link>
         <Link
           to="/"
-          className="border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs py-3 px-6 rounded-xl flex items-center justify-center gap-2 transition-colors"
+          className="border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all text-xs"
         >
           <Home size={16} /> Continue Shopping
         </Link>
       </div>
-    </div>
+          </section>
+        </div>
+      </div>
+    </main>
   )
 }

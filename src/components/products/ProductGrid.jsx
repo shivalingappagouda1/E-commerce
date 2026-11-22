@@ -5,7 +5,7 @@ import ProductCard from './ProductCard'
  * @param {object[]} products - normalized product array from the service layer
  * @param {number}   cols     - max columns (default 4)
  */
-export default function ProductGrid({ products = [], cols = 4 }) {
+export default function ProductGrid({ products = [], cols = 4, cardTheme }) {
   if (!products.length) {
     return (
       <div className="py-16 text-center text-slate-400">
@@ -22,7 +22,7 @@ export default function ProductGrid({ products = [], cols = 4 }) {
   return (
     <div className={`grid ${gridClass} gap-4`}>
       {products.map(product => (
-        <ProductCard key={product.id} product={product} />
+        <ProductCard key={product.id} product={product} cardTheme={cardTheme} />
       ))}
     </div>
   )

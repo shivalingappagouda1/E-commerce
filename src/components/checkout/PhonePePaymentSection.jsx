@@ -226,11 +226,11 @@ export default function PhonePePaymentSection({
   const isExact12Digits = utrInput.trim().length === 12 && validation.isValid
 
   return (
-    <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-sm space-y-6">
+    <div className="bg-white rounded-2xl border border-sky-100 p-4 sm:p-5 shadow-[0_8px_24px_rgba(30,64,110,0.07)] space-y-3.5">
       {/* ── Section Header ── */}
-      <div className="border-b border-slate-100 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+          <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
             <QrCode size={22} />
           </div>
           <div>
@@ -416,16 +416,16 @@ export default function PhonePePaymentSection({
 
       {/* ── Middle: QR Code & Payment Instructions (Shown when pending, within deadline, and no active submission) ── */}
       {!isPaymentCompleted && !isOrderCancelledOrExpired && !activeSub && !deadlineInfo.isExpired && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch bg-slate-50/70 border border-slate-200/70 rounded-3xl p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center bg-sky-50/60 border border-sky-100 rounded-2xl p-3">
           {/* QR Code Frame or Unmistakable Configuration Placeholder */}
-          <div className="flex flex-col items-center justify-center text-center space-y-3">
+          <div className="flex flex-col items-center justify-center text-center space-y-2">
             {!qrImgFailed && currentQrSrc ? (
-              <div className="relative p-4 bg-white rounded-3xl border-2 border-purple-200 shadow-md">
+              <div className="relative p-2.5 bg-white rounded-2xl border border-purple-200 shadow-sm">
                 <img
                   src={currentQrSrc}
                   alt="PhonePe QR Code"
                   onError={handleQrImageError}
-                  className="w-52 h-52 sm:w-60 sm:h-60 object-contain rounded-2xl"
+                  className="w-36 h-36 sm:w-40 sm:h-40 object-contain rounded-2xl"
                 />
 
                 {/* Scanning Corner Guides */}
@@ -436,7 +436,7 @@ export default function PhonePePaymentSection({
               </div>
             ) : (
               /* Unmistakable Administrative Setup Placeholder (NOT presented as a usable payment QR) */
-              <div className="w-full h-full min-h-[220px] rounded-3xl bg-amber-50/70 border-2 border-dashed border-amber-300 p-5 flex flex-col items-center justify-center text-center space-y-2.5">
+              <div className="w-full h-full min-h-[170px] rounded-2xl bg-amber-50/70 border-2 border-dashed border-amber-300 p-3 flex flex-col items-center justify-center text-center space-y-2.5">
                 <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
                   <AlertCircle size={24} />
                 </div>
@@ -465,9 +465,9 @@ export default function PhonePePaymentSection({
           </div>
 
           {/* Payment Instructions & Amount Card */}
-          <div className="space-y-4 text-xs flex flex-col justify-between">
+          <div className="space-y-2.5 text-xs flex flex-col justify-between">
             {/* Payable Amount Highlight */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1.5">
+            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs space-y-1">
               <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                 Exact Amount to Pay
               </p>
@@ -492,9 +492,9 @@ export default function PhonePePaymentSection({
 
             {/* Steps Checklist or Missing-QR Note */}
             {!qrImgFailed && currentQrSrc ? (
-              <div className="space-y-2 text-slate-600">
+              <div className="space-y-1.5 text-slate-600">
                 <p className="font-bold text-slate-800 text-xs">How to Complete Payment:</p>
-                <ol className="space-y-2 text-[11px] list-decimal list-inside leading-relaxed text-slate-600">
+                <ol className="space-y-1.5 text-[11px] list-decimal list-inside leading-relaxed text-slate-600">
                   <li>Open your UPI app (<span className="font-semibold text-purple-700">PhonePe</span>, GPay, Paytm).</li>
                   <li>Scan the QR code on the left.</li>
                   <li>Enter the exact amount: <strong className="text-slate-900">{formatPrice(orderTotal)}</strong>.</li>
@@ -526,10 +526,10 @@ export default function PhonePePaymentSection({
 
       {/* ── 12-Digit UTR Input Form (Available only within 48-hour deadline and when not under review) ── */}
       {!isPaymentCompleted && !isOrderCancelledOrExpired && !activeSub && !deadlineInfo.isExpired && (
-        <form onSubmit={handleSubmitUtr} className="space-y-3 pt-2">
+        <form onSubmit={handleSubmitUtr} className="space-y-2.5 pt-1">
           <div className="space-y-1.5">
             <label className="block text-xs font-bold text-slate-800">Your UPI ID used for payment *</label>
-            <input type="text" value={upiIdInput} onChange={e => { setUpiIdInput(e.target.value); setSubmissionError('') }} disabled={isSubmitting} placeholder="e.g. yourname@okaxis" autoComplete="off" className="w-full text-sm p-3 rounded-2xl border border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 focus:outline-none" />
+            <input type="text" value={upiIdInput} onChange={e => { setUpiIdInput(e.target.value); setSubmissionError('') }} disabled={isSubmitting} placeholder="e.g. yourname@okaxis" autoComplete="off" className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 focus:outline-none" />
             <p className="text-[11px] text-slate-400">This is your UPI ID (VPA), not the 12-digit UTR. It is used only if a refund is required.</p>
           </div>
           <div className="space-y-1.5">
@@ -543,7 +543,7 @@ export default function PhonePePaymentSection({
                 onChange={handleUtrInputChange}
                 disabled={isSubmitting}
                 placeholder="e.g. 432109876543 (exactly 12 numeric digits)"
-                className={`w-full text-sm font-mono tracking-wider p-3 rounded-2xl border transition-all focus:outline-none ${
+                className={`w-full text-xs font-mono tracking-wider p-2.5 rounded-xl border transition-all focus:outline-none ${
                   isExact12Digits
                     ? 'border-emerald-500 bg-emerald-50/20 ring-2 ring-emerald-500/20'
                     : hasNonDigits || isTooLong
@@ -604,7 +604,7 @@ export default function PhonePePaymentSection({
           <button
             type="submit"
             disabled={!validation.isValid || isSubmitting}
-            className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold text-xs sm:text-sm py-3.5 px-6 rounded-2xl flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all"
+            className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold text-xs sm:text-sm py-3 px-5 rounded-xl flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all"
           >
             {isSubmitting ? (
               <>

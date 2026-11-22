@@ -89,7 +89,7 @@ export default function Navbar() {
   const displayName = profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'My Account'
 
   return (
-    <header className="sticky top-0 z-50 bg-gradient-to-r from-brand-600 to-brand-500 shadow-md">
+    <header className="sticky top-0 z-50 bg-[#195B87] shadow-lg shadow-[#123B5A]/15">
       {/* ── Main Top Bar ── */}
       <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center gap-3 md:gap-6">
         {/* Brand Logo */}
@@ -323,14 +323,14 @@ export default function Navbar() {
       </div>
 
       {/* ── Sub-Navigation: Category Strip & Deals ── */}
-      <nav className="hidden sm:block border-t border-brand-700/60 bg-brand-700/90 backdrop-blur-xs">
+      <nav className="hidden sm:block border-t border-[#D6E7F3] bg-[#EAF3FA] backdrop-blur-xs">
         <div className="max-w-7xl mx-auto px-4 flex items-center justify-between text-xs font-medium text-white">
           <ul className="flex items-center gap-1 overflow-x-auto py-1.5 scrollbar-none">
             {categories.map(cat => (
               <li key={cat.id || cat.slug}>
                 <Link
                   to={`/category/${cat.slug}`}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-brand-100 hover:text-white hover:bg-brand-600 transition-colors whitespace-nowrap"
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[#195B87] hover:text-[#123B5A] hover:bg-white transition-colors whitespace-nowrap"
                 >
                   <span>{cat.icon || '📦'}</span>
                   <span>{cat.name}</span>
@@ -341,7 +341,7 @@ export default function Navbar() {
 
           <Link
             to="/deals"
-            className="flex items-center gap-1 px-3 py-1 bg-amber-400 text-slate-950 font-bold rounded-lg hover:bg-amber-300 transition-all shrink-0 shadow-xs"
+            className="flex items-center gap-1 px-3 py-1 bg-[#F97316] text-white font-bold rounded-lg hover:bg-[#EA580C] transition-all shrink-0 shadow-xs"
           >
             <Flame size={13} className="fill-amber-600 text-amber-600" />
             <span>Super Deals</span>

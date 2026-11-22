@@ -30,9 +30,9 @@ const SOCIALS = [
 
 export default function Footer() {
   return (
-    <footer className="bg-slate-900 text-slate-300 mt-12">
+    <footer className="bg-[#123B5A] text-[#DCEFFA] mt-12">
       {/* Trust strip */}
-      <div className="border-b border-slate-800">
+      <div className="border-b border-[#2B5B7A]">
         <div className="max-w-7xl mx-auto px-4 py-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-center text-xs">
           {[
             { emoji: '🚚', label: 'Free Delivery',   sub: 'On orders above ₹499' },
@@ -43,7 +43,7 @@ export default function Footer() {
             <div key={item.label} className="flex flex-col items-center gap-1">
               <span className="text-2xl">{item.emoji}</span>
               <span className="font-semibold text-white">{item.label}</span>
-              <span className="text-slate-400">{item.sub}</span>
+              <span className="text-[#B9D2E2]">{item.sub}</span>
             </div>
           ))}
         </div>
@@ -59,20 +59,20 @@ export default function Footer() {
             </div>
             <span className="text-white font-black text-xl tracking-tight">ShopKart</span>
           </Link>
-          <p className="text-sm text-slate-400 leading-relaxed max-w-sm">
+          <p className="text-sm text-[#B9D2E2] leading-relaxed max-w-sm">
             Your one-stop destination for quality products at unbeatable prices.
             Shop millions of items across electronics, fashion, home and more.
           </p>
           <div className="space-y-2 text-sm">
-            <div className="flex items-center gap-2 text-slate-400">
+            <div className="flex items-center gap-2 text-[#B9D2E2]">
               <Mail size={14} className="text-brand-400" />
               <span>support@shopkart.in</span>
             </div>
-            <div className="flex items-center gap-2 text-slate-400">
+            <div className="flex items-center gap-2 text-[#B9D2E2]">
               <Phone size={14} className="text-brand-400" />
               <span>1800-123-4567 (Toll Free)</span>
             </div>
-            <div className="flex items-center gap-2 text-slate-400">
+            <div className="flex items-center gap-2 text-[#B9D2E2]">
               <MapPin size={14} className="text-brand-400" />
               <span>Bangalore, Karnataka, India</span>
             </div>
@@ -88,7 +88,7 @@ export default function Footer() {
                 <li key={link.label}>
                   <Link
                     to={link.to}
-                    className="text-sm text-slate-400 hover:text-white transition-colors hover:translate-x-0.5 inline-block"
+                    className="text-sm text-[#B9D2E2] hover:text-white transition-colors hover:translate-x-0.5 inline-block"
                   >
                     {link.label}
                   </Link>
@@ -100,9 +100,9 @@ export default function Footer() {
       </div>
 
       {/* Bottom bar */}
-      <div className="border-t border-slate-800">
+      <div className="border-t border-[#2B5B7A]">
         <div className="max-w-7xl mx-auto px-4 py-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-[#A7C2D4]">
             © {new Date().getFullYear()} ShopKart. All rights reserved.
           </p>
           <div className="flex items-center gap-3">
@@ -111,7 +111,7 @@ export default function Footer() {
                 key={label}
                 href={href}
                 aria-label={label}
-                className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+                className="p-1.5 rounded-full text-[#B9D2E2] hover:text-white hover:bg-[#195B87] transition-colors"
               >
                 <Icon size={16} />
               </a>

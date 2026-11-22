@@ -219,7 +219,7 @@ function DealsStrip() {
 }
 
 /** Product Section Container */
-function ProductSection({ title, subtitle, viewAllLink, loadFn }) {
+function ProductSection({ title, subtitle, viewAllLink, loadFn, cardTheme }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -235,7 +235,7 @@ function ProductSection({ title, subtitle, viewAllLink, loadFn }) {
   return (
     <section className="space-y-4">
       <SectionHeading title={title} subtitle={subtitle} viewAllLink={viewAllLink} />
-      {loading ? <ProductSectionSkeleton count={4} /> : <ProductGrid products={products} cols={4} />}
+      {loading ? <ProductSectionSkeleton count={4} /> : <ProductGrid products={products} cols={4} cardTheme={cardTheme} />}
     </section>
   )
 }
@@ -392,6 +392,7 @@ export default function HomePage() {
         subtitle="Catalog items marked as featured"
         viewAllLink="/featured"
         loadFn={fetchFeaturedProducts}
+        cardTheme="ocean-blue"
       />
 
       {/* 6. Promotional Split Banners */}
@@ -403,6 +404,7 @@ export default function HomePage() {
         subtitle="Products with customer rating 4.5+ sorted by review count"
         viewAllLink="/best-sellers"
         loadFn={fetchBestSellers}
+        cardTheme="ocean-blue"
       />
 
       {/* 8. Tagged Picks */}
@@ -411,6 +413,7 @@ export default function HomePage() {
         subtitle="Products tagged with Trending, Hot, or Top Deal badges"
         viewAllLink="/trending"
         loadFn={fetchTrendingProducts}
+        cardTheme="ocean-blue"
       />
 
       {/* 9. VIP Newsletter */}

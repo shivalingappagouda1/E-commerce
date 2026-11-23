@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Navigate, Routes, Route } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import ScrollToTop from '../components/common/ScrollToTop'
 
 // Layouts
 import CustomerLayout from '../components/layout/CustomerLayout'
@@ -113,7 +114,9 @@ function CustomerAccessGate({ children }) {
 
 export default function AppRoutes() {
   return (
-    <Suspense fallback={<RouteLoadingFallback />}>
+    <>
+      <ScrollToTop />
+      <Suspense fallback={<RouteLoadingFallback />}>
       <Routes>
         {/* Security routes are outside the customer layout so pending users can restore. */}
         <Route path="/admin/verify" element={<AdminOtpPage />} />
@@ -169,6 +172,7 @@ export default function AppRoutes() {
           <Route path="settings" element={<AdminSettingsPage />} />
         </Route>
       </Routes>
-    </Suspense>
+      </Suspense>
+    </>
   )
 }

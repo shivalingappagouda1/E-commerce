@@ -363,7 +363,7 @@ export default function HomePage() {
           <HeroBanner banners={banners} compact />
         </div>
 
-        <div className="min-w-0 lg:col-span-1">
+        <div className="hidden min-w-0 md:block lg:col-span-1">
           <SidePromotion
             icon={Headphones}
             eyebrow="MEGA ELECTRONICS SALE"
@@ -374,7 +374,7 @@ export default function HomePage() {
           />
         </div>
 
-        <div className="min-w-0 lg:col-span-1">
+        <div className="hidden min-w-0 md:block lg:col-span-1">
           <SidePromotion
             icon={Sofa}
             eyebrow="HOME & LIVING"

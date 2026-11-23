@@ -1,0 +1,68 @@
+
+/* ShopKart horizontal product carousels */
+.shopkart-carousel {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: 10px;
+}
+.shopkart-carousel__track {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 5px 2px 14px;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.shopkart-carousel__track::-webkit-scrollbar { display: none; }
+.shopkart-carousel__item {
+  flex: 0 0 clamp(190px, 22vw, 250px);
+  min-width: 0;
+  scroll-snap-align: start;
+}
+.shopkart-carousel__item > .product-card { height: 100%; }
+.shopkart-carousel__arrow {
+  display: grid;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 9999px;
+  background: #fff;
+  color: #123b5a;
+  box-shadow: 0 3px 12px rgb(15 23 42 / 12%);
+  cursor: pointer;
+  transition: background .2s ease, color .2s ease, transform .2s ease, box-shadow .2s ease;
+  z-index: 2;
+}
+.shopkart-carousel__arrow:hover {
+  background: #195b87;
+  color: #fff;
+  transform: scale(1.06);
+  box-shadow: 0 5px 16px rgb(15 23 42 / 18%);
+}
+.shopkart-carousel__arrow:focus-visible {
+  outline: 3px solid #69a9d1;
+  outline-offset: 3px;
+}
+.shopkart-carousel--deals .shopkart-carousel__item {
+  flex-basis: clamp(145px, 15vw, 190px);
+}
+@media (max-width: 640px) {
+  .shopkart-carousel { gap: 5px; }
+  .shopkart-carousel__arrow { flex-basis: 32px; width: 32px; height: 32px; }
+  .shopkart-carousel__item { flex-basis: 170px; }
+  .shopkart-carousel--deals .shopkart-carousel__item { flex-basis: 145px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shopkart-carousel__track { scroll-behavior: auto; }
+  .shopkart-carousel__arrow { transition: none; }
+}

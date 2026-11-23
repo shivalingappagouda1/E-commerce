@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Truck, ShieldCheck, RotateCcw, Lock, Headset,
-  ArrowRight, Flame, Sparkles, Sofa, Headphones,
+  ArrowRight, ChevronLeft, ChevronRight, Flame, Sparkles, Sofa, Headphones,
   ShoppingBag, Smartphone
 } from 'lucide-react'
 
 import HeroBanner from '../../components/layout/HeroBanner'
 import ProductGrid from '../../components/products/ProductGrid'
+import '../../shopkart-carousel.css'
 import SectionHeading from '../../components/common/SectionHeading'
 import { isSupabaseConfigured } from '../../lib/supabase'
 import {
@@ -120,6 +121,56 @@ function CategorySection({ categories, loading }) {
   )
 }
 
+function DealsCarousel({ deals }) {
+  const trackRef = useRef(null)
+
+  const move = direction => {
+    const track = trackRef.current
+    if (!track) return
+    track.scrollBy({ left: direction * Math.max(track.clientWidth * 0.82, 260), behavior: 'smooth' })
+  }
+
+  return (
+    <div className="shopkart-carousel shopkart-carousel--deals">
+      <button type="button" className="shopkart-carousel__arrow shopkart-carousel__arrow--left" aria-label="Scroll deals left" onClick={() => move(-1)}>
+        <ChevronLeft size={20} />
+      </button>
+      <div ref={trackRef} className="shopkart-carousel__track" role="region" aria-label="Flash deals" tabIndex={0}>
+        {deals.slice(0, 12).map(product => (
+          <Link
+            key={product.id}
+            to={`/product/${product.slug}`}
+            className="shopkart-carousel__item deal-product-card group flex min-w-0 flex-col rounded-xl p-2.5 shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+          >
+            <div className="deal-product-card__image relative mb-2 aspect-square overflow-hidden rounded-lg p-2">
+              <img
+                src={product.image}
+                alt={product.name}
+                loading="lazy"
+                className="h-full w-full object-contain transition group-hover:scale-105"
+                onError={e => { e.currentTarget.src = 'https://placehold.co/300x300?text=ShopKart' }}
+              />
+              <span className="absolute left-2 top-2 rounded-md bg-red-600 px-1.5 py-0.5 text-[9px] font-black text-white">
+                {product.discount_percent || product.discount || 0}% OFF
+              </span>
+            </div>
+            <h3 className="deal-product-card__title line-clamp-2 min-h-8 text-xs font-bold">{product.name}</h3>
+            <p className="deal-product-card__price mt-1 text-sm font-black">{formatPrice(product.price)}</p>
+            {(product.original_price || product.originalPrice) > product.price && (
+              <p className="deal-product-card__original-price text-[10px] line-through">
+                {formatPrice(product.original_price || product.originalPrice)}
+              </p>
+            )}
+          </Link>
+        ))}
+      </div>
+      <button type="button" className="shopkart-carousel__arrow shopkart-carousel__arrow--right" aria-label="Scroll deals right" onClick={() => move(1)}>
+        <ChevronRight size={20} />
+      </button>
+    </div>
+  )
+}
+
 function DealsSection() {
   const [deals, setDeals] = useState([])
   const [loading, setLoading] = useState(true)
@@ -163,35 +214,7 @@ function DealsSection() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-          {deals.slice(0, 6).map(product => (
-            <Link
-              key={product.id}
-              to={`/product/${product.slug}`}
-              className="deal-product-card group flex min-w-0 flex-col rounded-xl p-2.5 shadow-sm transition hover:-translate-y-1 hover:shadow-md"
-            >
-              <div className="deal-product-card__image relative mb-2 aspect-square overflow-hidden rounded-lg p-2">
-                <img
-                  src={product.image}
-                  alt={product.name}
-                  loading="lazy"
-                  className="h-full w-full object-contain transition group-hover:scale-105"
-                  onError={e => { e.currentTarget.src = 'https://placehold.co/300x300?text=ShopKart' }}
-                />
-                <span className="absolute left-2 top-2 rounded-md bg-red-600 px-1.5 py-0.5 text-[9px] font-black text-white">
-                  {product.discount_percent || product.discount || 0}% OFF
-                </span>
-              </div>
-              <h3 className="deal-product-card__title line-clamp-2 min-h-8 text-xs font-bold">{product.name}</h3>
-              <p className="deal-product-card__price mt-1 text-sm font-black">{formatPrice(product.price)}</p>
-              {(product.original_price || product.originalPrice) > product.price && (
-                <p className="deal-product-card__original-price text-[10px] line-through">
-                  {formatPrice(product.original_price || product.originalPrice)}
-                </p>
-              )}
-            </Link>
-          ))}
-        </div>
+        <DealsCarousel deals={deals} />
       )}
     </section>
   )

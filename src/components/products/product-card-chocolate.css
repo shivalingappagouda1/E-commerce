@@ -1,0 +1,119 @@
+/*
+ * ShopKart compact milk-chocolate product cards.
+ * Applies to individual product cards and Flash Deal tiles only.
+ */
+.product-card--milk-chocolate {
+  background: linear-gradient(155deg, #F3D9C7 0%, #EBC5AA 65%, #E4B99A 100%);
+  color: #38251C;
+  border: 1px solid #DDB092;
+  box-shadow: 0 4px 12px rgb(88 52 30 / 10%);
+}
+
+.product-card--milk-chocolate:hover {
+  border-color: #C99470;
+  box-shadow: 0 10px 20px rgb(88 52 30 / 16%);
+}
+
+.product-card--milk-chocolate .product-card__image {
+  background: linear-gradient(145deg, #FFFCF9 0%, #FFF4EB 100%);
+  border-bottom: 1px solid #E2C3AD;
+}
+
+.product-card--milk-chocolate .product-card__content {
+  background: linear-gradient(155deg, #F3D9C7 0%, #EBC5AA 65%, #E4B99A 100%);
+  color: #38251C;
+}
+
+.product-card--milk-chocolate .product-card__category {
+  color: #C07848 !important;
+}
+
+.product-card--milk-chocolate .product-card__original-price {
+  color: #795B49;
+}
+
+.product-card--milk-chocolate .product-card__title,
+.product-card--milk-chocolate .product-card__price,
+.product-card--milk-chocolate .product-card__quantity-label {
+  color: #38251C;
+}
+
+.product-card--milk-chocolate .product-card__rating {
+  background: #FFF0C7;
+  color: #714515;
+}
+
+.product-card--milk-chocolate .product-card__quantity {
+  background: rgb(133 75 43 / 10%);
+  border: 1px solid #D2A487;
+}
+
+.product-card--milk-chocolate .product-card__add-button {
+  background: linear-gradient(135deg, #965B37, #854B2B);
+}
+
+.product-card--milk-chocolate .product-card__add-button:hover {
+  background: linear-gradient(135deg, #854B2B, #6F3D24);
+}
+
+/* Flash Deal tiles use the same card surface and compact typography. */
+.deal-product-card {
+  background: linear-gradient(155deg, #F3D9C7 0%, #EBC5AA 65%, #E4B99A 100%);
+  color: #38251C;
+  border: 1px solid #DDB092;
+  border-radius: 14px;
+  box-shadow: 0 4px 12px rgb(88 52 30 / 10%);
+}
+
+.deal-product-card:hover {
+  border-color: #C99470;
+  box-shadow: 0 10px 20px rgb(88 52 30 / 16%);
+}
+
+.deal-product-card__image {
+  background: linear-gradient(145deg, #FFFCF9 0%, #FFF4EB 100%);
+}
+
+.deal-product-card__title,
+.deal-product-card__price {
+  color: #38251C;
+}
+
+.deal-product-card__original-price {
+  color: #795B49;
+}
+
+
+/* ShopKart approved Dusty Aqua product information panels.
+   Only the lower information area changes color.
+   Existing card dimensions, grid, spacing, image areas and controls are preserved. */
+.product-card--milk-chocolate .product-card__content {
+  background: #C5E2E8;
+  color: #172B3A;
+}
+
+.product-card--milk-chocolate .product-card__category,
+.product-card--milk-chocolate .product-card__title,
+.product-card--milk-chocolate .product-card__price,
+.product-card--milk-chocolate .product-card__quantity-label {
+  color: #172B3A;
+}
+
+.product-card--milk-chocolate .product-card__original-price {
+  color: #526C75;
+}
+
+/* Flash Deal product information panels */
+.deal-product-card {
+  background: #C5E2E8;
+  color: #172B3A;
+}
+
+.deal-product-card__title,
+.deal-product-card__price {
+  color: #172B3A;
+}
+
+.deal-product-card__original-price {
+  color: #526C75;
+}
